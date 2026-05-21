@@ -112,15 +112,18 @@ def handler(event: dict, context) -> dict:
     try:
         # GET /?action=test
         if method == "GET" and qs.get("action") == "test":
-            cur.execute(f"SELECT selected_model, api_key FROM {SCHEMA}.ai_settings WHERE id = 1")
+            cur.execute(f"SELECT selected_model, api_key, gemini_api_key FROM {SCHEMA}.ai_settings WHERE id = 1")
             row = cur.fetchone()
             if not row:
                 return resp(404, {"ok": False, "error": "Настройки не найдены"})
-            model, api_key = row[0], row[1] or ""
+            model = row[0]
+            deepseek_key = row[1] or os.environ.get("DEEPSEEK_API_KEY", "")
+            gemini_key = row[2] or os.environ.get("GEMINI_API_KEY", "")
 
-            # Prefer DEEPSEEK_API_KEY secret if model is deepseek and no manual key set
-            if model.startswith("deepseek") and not api_key:
-                api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+            if model.startswith("gemini"):
+                api_key = gemini_key
+            else:
+                api_key = deepseek_key
 
             result = test_connection(model, api_key)
             return resp(200, result)
