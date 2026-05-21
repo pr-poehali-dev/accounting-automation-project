@@ -37,8 +37,10 @@ export default function AdminSettings() {
   });
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [editKey, setEditKey] = useState(false);
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
   const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [editGeminiKey, setEditGeminiKey] = useState(false);
   const [yandexKeyInput, setYandexKeyInput] = useState("");
   const [yandexFolderInput, setYandexFolderInput] = useState("");
   const [showYandexKey, setShowYandexKey] = useState(false);
@@ -136,8 +138,8 @@ export default function AdminSettings() {
       }
       const res = await api.aiSettings.update(payload);
       setSettings(res.settings);
-      if (apiKeyInput.trim()) setApiKeyInput("");
-      if (geminiKeyInput.trim()) setGeminiKeyInput("");
+      if (apiKeyInput.trim()) { setApiKeyInput(""); setEditKey(false); }
+      if (geminiKeyInput.trim()) { setGeminiKeyInput(""); setEditGeminiKey(false); }
       if (yandexKeyInput.trim()) { setYandexKeyInput(""); setEditYandexKey(false); }
       if (yandexFolderInput.trim()) setYandexFolderInput("");
       setSaved(true);
@@ -229,40 +231,54 @@ export default function AdminSettings() {
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs text-muted-foreground">
                 API Ключ
-                {currentModel && (
-                  <span className="ml-2 text-muted-foreground/60">для {currentModel.provider}</span>
-                )}
+                {currentModel && <span className="ml-2 text-muted-foreground/60">для {currentModel.provider}</span>}
               </label>
-              {settings.api_key_set && !apiKeyInput && (
+              {settings.api_key_set && !editKey && (
                 <span className="flex items-center gap-1 text-xs text-positive">
                   <Icon name="CheckCircle" size={11} /> Ключ сохранён
                 </span>
               )}
             </div>
             <div className="relative">
-              <input
-                type={showKey ? "text" : "password"}
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder={
-                  settings.api_key_masked
-                    ? settings.api_key_masked
-                    : "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                }
-                className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-gold pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Icon name={showKey ? "EyeOff" : "Eye"} size={15} />
-              </button>
+              {settings.api_key_set && !editKey ? (
+                <div className="relative flex items-center w-full bg-secondary border border-border rounded px-4 py-2.5 pr-20">
+                  <span className="text-sm font-mono-fin text-foreground flex-1 truncate">
+                    {showKey ? settings.api_key_masked : "sk-" + "●".repeat(28) + settings.api_key_masked?.slice(-4)}
+                  </span>
+                  <div className="absolute right-2 flex items-center gap-1">
+                    <button type="button" onClick={() => setShowKey(v => !v)} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                      <Icon name={showKey ? "EyeOff" : "Eye"} size={15} />
+                    </button>
+                    <button type="button" onClick={() => { setEditKey(true); setShowKey(false); }} className="p-1 text-muted-foreground hover:text-gold transition-colors" title="Заменить ключ">
+                      <Icon name="Pencil" size={13} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <input
+                    autoFocus={editKey}
+                    type={showKey ? "text" : "password"}
+                    value={apiKeyInput}
+                    onChange={(e) => setApiKeyInput(e.target.value)}
+                    placeholder="Вставьте API-ключ..."
+                    className="w-full bg-secondary border border-gold/50 rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-gold pr-16"
+                  />
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <button type="button" onClick={() => setShowKey(v => !v)} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                      <Icon name={showKey ? "EyeOff" : "Eye"} size={15} />
+                    </button>
+                    {editKey && (
+                      <button type="button" onClick={() => { setEditKey(false); setApiKeyInput(""); }} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                        <Icon name="X" size={13} />
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
             <div className="text-xs text-muted-foreground mt-1.5">
-              {settings.api_key_set && !apiKeyInput
-                ? "Введите новый ключ чтобы заменить сохранённый"
-                : "Ключ сохраняется в защищённом хранилище сервера, не в браузере"}
+              {settings.api_key_set && !editKey ? "Нажмите карандаш чтобы заменить ключ" : "Ключ сохраняется на сервере, не в браузере"}
             </div>
           </div>
 
@@ -289,17 +305,42 @@ export default function AdminSettings() {
               )}
             </div>
             <div className="relative">
-              <input
-                type={showGeminiKey ? "text" : "password"}
-                value={geminiKeyInput}
-                onChange={(e) => setGeminiKeyInput(e.target.value)}
-                placeholder={settings.gemini_key_masked || "AIzaSy..."}
-                className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-blue-500 pr-10"
-              />
-              <button type="button" onClick={() => setShowGeminiKey(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <Icon name={showGeminiKey ? "EyeOff" : "Eye"} size={15} />
-              </button>
+              {settings.gemini_key_set && !editGeminiKey ? (
+                <div className="relative flex items-center w-full bg-secondary border border-border rounded px-4 py-2.5 pr-20">
+                  <span className="text-sm font-mono-fin text-foreground flex-1 truncate">
+                    {showGeminiKey ? settings.gemini_key_masked : "AIza" + "●".repeat(28) + settings.gemini_key_masked?.slice(-4)}
+                  </span>
+                  <div className="absolute right-2 flex items-center gap-1">
+                    <button type="button" onClick={() => setShowGeminiKey(v => !v)} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                      <Icon name={showGeminiKey ? "EyeOff" : "Eye"} size={15} />
+                    </button>
+                    <button type="button" onClick={() => { setEditGeminiKey(true); setShowGeminiKey(false); }} className="p-1 text-muted-foreground hover:text-blue-400 transition-colors" title="Заменить ключ">
+                      <Icon name="Pencil" size={13} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <input
+                    autoFocus={editGeminiKey}
+                    type={showGeminiKey ? "text" : "password"}
+                    value={geminiKeyInput}
+                    onChange={(e) => setGeminiKeyInput(e.target.value)}
+                    placeholder="Вставьте ключ AIzaSy..."
+                    className="w-full bg-secondary border border-blue-500/50 rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-blue-500 pr-16"
+                  />
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    <button type="button" onClick={() => setShowGeminiKey(v => !v)} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                      <Icon name={showGeminiKey ? "EyeOff" : "Eye"} size={15} />
+                    </button>
+                    {editGeminiKey && (
+                      <button type="button" onClick={() => { setEditGeminiKey(false); setGeminiKeyInput(""); }} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                        <Icon name="X" size={13} />
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
             <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors">
