@@ -252,6 +252,7 @@ export interface RecognizeResult {
   description: string | null;
   category: string;
   type?: "expense" | "income";
+  vision_failed?: boolean;
   transaction_id?: number | null;
   date_found?: boolean;
   error?: string;
