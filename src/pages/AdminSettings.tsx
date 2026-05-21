@@ -39,6 +39,9 @@ export default function AdminSettings() {
   const [showKey, setShowKey] = useState(false);
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
   const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [yandexKeyInput, setYandexKeyInput] = useState("");
+  const [yandexFolderInput, setYandexFolderInput] = useState("");
+  const [showYandexKey, setShowYandexKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -118,10 +121,18 @@ export default function AdminSettings() {
       if (geminiKeyInput.trim()) {
         payload.gemini_api_key = geminiKeyInput.trim();
       }
+      if (yandexKeyInput.trim()) {
+        payload.yandex_api_key = yandexKeyInput.trim();
+      }
+      if (yandexFolderInput.trim()) {
+        payload.yandex_folder_id = yandexFolderInput.trim();
+      }
       const res = await api.aiSettings.update(payload);
       setSettings(res.settings);
       if (apiKeyInput.trim()) setApiKeyInput("");
       if (geminiKeyInput.trim()) setGeminiKeyInput("");
+      if (yandexKeyInput.trim()) setYandexKeyInput("");
+      if (yandexFolderInput.trim()) setYandexFolderInput("");
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
@@ -286,6 +297,52 @@ export default function AdminSettings() {
             <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors">
               <Icon name="ExternalLink" size={12} /> Получить бесплатный ключ на aistudio.google.com
+            </a>
+          </div>
+
+          {/* Yandex Vision — распознавание фото (приоритетный) */}
+          <div className="rounded-lg border border-red-900/30 bg-red-900/10 p-3.5 space-y-2.5">
+            <div className="flex items-center gap-2">
+              <Icon name="ScanEye" size={15} className="text-red-400 flex-shrink-0" />
+              <div>
+                <div className="text-sm font-medium text-red-300">Яндекс Vision — распознавание документов</div>
+                <div className="text-xs text-muted-foreground">Приоритетный провайдер. Отлично читает русский текст</div>
+              </div>
+              {settings.yandex_key_set && (
+                <span className="ml-auto flex items-center gap-1 text-xs text-positive whitespace-nowrap"><Icon name="CheckCircle" size={11} />Ключ есть</span>
+              )}
+            </div>
+            <div className="relative">
+              <input
+                type={showYandexKey ? "text" : "password"}
+                value={yandexKeyInput}
+                onChange={(e) => setYandexKeyInput(e.target.value)}
+                placeholder={settings.yandex_key_masked || "AQVN..."}
+                className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-red-500 pr-10"
+              />
+              <button type="button" onClick={() => setShowYandexKey(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <Icon name={showYandexKey ? "EyeOff" : "Eye"} size={15} />
+              </button>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">
+                Folder ID каталога Яндекс Облако
+                {settings.yandex_folder_set && !yandexFolderInput && (
+                  <span className="ml-2 text-positive">✓ сохранён</span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={yandexFolderInput}
+                onChange={(e) => setYandexFolderInput(e.target.value)}
+                placeholder={settings.yandex_folder_masked || "b1g..."}
+                className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-red-500"
+              />
+            </div>
+            <a href="https://console.yandex.cloud" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 transition-colors">
+              <Icon name="ExternalLink" size={12} /> Открыть Яндекс Облако — скопировать ключ и Folder ID
             </a>
           </div>
 

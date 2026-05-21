@@ -129,7 +129,7 @@ export const api = {
     get: () =>
       request<{ settings: AiSettings }>(URLS.aiSettings),
 
-    update: (data: Partial<AiSettings> & { api_key?: string; gemini_api_key?: string }) =>
+    update: (data: Partial<AiSettings> & { api_key?: string; gemini_api_key?: string; yandex_api_key?: string; yandex_folder_id?: string }) =>
       request<{ settings: AiSettings }>(URLS.aiSettings, {
         method: "PUT",
         body: JSON.stringify(data),
@@ -233,6 +233,10 @@ export interface AiSettings {
   api_key_masked?: string;
   gemini_key_set?: boolean;
   gemini_key_masked?: string;
+  yandex_key_set?: boolean;
+  yandex_key_masked?: string;
+  yandex_folder_set?: boolean;
+  yandex_folder_masked?: string;
   updated_at?: string;
 }
 

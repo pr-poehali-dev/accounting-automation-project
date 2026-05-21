@@ -64,13 +64,13 @@ def get_conn():
 
 def get_keys(conn):
     cur = conn.cursor()
-    cur.execute(f"SELECT api_key, gemini_api_key FROM {SCHEMA}.ai_settings WHERE id=1")
+    cur.execute(f"SELECT api_key, gemini_api_key, yandex_api_key, yandex_folder_id FROM {SCHEMA}.ai_settings WHERE id=1")
     row = cur.fetchone()
     cur.close()
-    deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "") or (row[0] if row else "") or ""
-    gemini_key = os.environ.get("GEMINI_API_KEY", "") or (row[1] if row else "") or ""
-    yandex_key = os.environ.get("YANDEX_API_KEY", "")
-    yandex_folder = os.environ.get("YANDEX_FOLDER_ID", "")
+    deepseek_key = (row[0] if row else "") or os.environ.get("DEEPSEEK_API_KEY", "")
+    gemini_key = (row[1] if row else "") or os.environ.get("GEMINI_API_KEY", "")
+    yandex_key = (row[2] if row else "") or os.environ.get("YANDEX_API_KEY", "")
+    yandex_folder = (row[3] if row else "") or os.environ.get("YANDEX_FOLDER_ID", "")
     return deepseek_key, gemini_key, yandex_key, yandex_folder
 
 

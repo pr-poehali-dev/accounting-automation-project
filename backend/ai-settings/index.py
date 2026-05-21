@@ -128,13 +128,16 @@ def handler(event: dict, context) -> dict:
         # GET /
         if method == "GET":
             cur.execute(f"""
-                SELECT selected_model, max_tokens, temperature, system_prompt, api_key, updated_at, gemini_api_key
+                SELECT selected_model, max_tokens, temperature, system_prompt, api_key, updated_at, gemini_api_key,
+                       yandex_api_key, yandex_folder_id
                 FROM {SCHEMA}.ai_settings WHERE id = 1
             """)
             row = cur.fetchone()
             if not row:
                 return resp(404, {"error": "Settings not found"})
             gemini_key = row[6] or os.environ.get("GEMINI_API_KEY", "")
+            yandex_key = row[7] or os.environ.get("YANDEX_API_KEY", "")
+            yandex_folder = row[8] or os.environ.get("YANDEX_FOLDER_ID", "")
             result = {
                 "selected_model": row[0],
                 "max_tokens": row[1],
@@ -144,6 +147,10 @@ def handler(event: dict, context) -> dict:
                 "api_key_masked": mask_key(row[4] or os.environ.get("DEEPSEEK_API_KEY", "")),
                 "gemini_key_set": bool(gemini_key),
                 "gemini_key_masked": mask_key(gemini_key),
+                "yandex_key_set": bool(yandex_key),
+                "yandex_key_masked": mask_key(yandex_key),
+                "yandex_folder_set": bool(yandex_folder),
+                "yandex_folder_masked": mask_key(yandex_folder),
                 "updated_at": str(row[5]),
             }
             return resp(200, {"settings": result})
@@ -163,17 +170,26 @@ def handler(event: dict, context) -> dict:
             if body.get("gemini_api_key"):
                 fields.append("gemini_api_key = %s")
                 params.append(body["gemini_api_key"])
+            if body.get("yandex_api_key"):
+                fields.append("yandex_api_key = %s")
+                params.append(body["yandex_api_key"])
+            if body.get("yandex_folder_id"):
+                fields.append("yandex_folder_id = %s")
+                params.append(body["yandex_folder_id"])
             if not fields:
                 return resp(400, {"error": "No fields"})
             fields.append("updated_at = NOW()")
             params.append(1)
             cur.execute(f"""
                 UPDATE {SCHEMA}.ai_settings SET {', '.join(fields)} WHERE id = %s
-                RETURNING selected_model, max_tokens, temperature, system_prompt, api_key, gemini_api_key
+                RETURNING selected_model, max_tokens, temperature, system_prompt, api_key, gemini_api_key,
+                          yandex_api_key, yandex_folder_id
             """, params)
             conn.commit()
             row = cur.fetchone()
             gemini_key = row[5] or ""
+            yandex_key = row[6] or os.environ.get("YANDEX_API_KEY", "")
+            yandex_folder = row[7] or os.environ.get("YANDEX_FOLDER_ID", "")
             result = {
                 "selected_model": row[0],
                 "max_tokens": row[1],
@@ -183,6 +199,10 @@ def handler(event: dict, context) -> dict:
                 "api_key_masked": mask_key(row[4] or os.environ.get("DEEPSEEK_API_KEY", "")),
                 "gemini_key_set": bool(gemini_key),
                 "gemini_key_masked": mask_key(gemini_key),
+                "yandex_key_set": bool(yandex_key),
+                "yandex_key_masked": mask_key(yandex_key),
+                "yandex_folder_set": bool(yandex_folder),
+                "yandex_folder_masked": mask_key(yandex_folder),
             }
             return resp(200, {"settings": result})
 
