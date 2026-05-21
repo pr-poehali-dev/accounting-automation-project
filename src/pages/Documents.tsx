@@ -62,11 +62,24 @@ export default function Documents() {
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
 
+  // localStorage helpers для хранения превью между сессиями
+  const savePreview = (docId: number, url: string) => {
+    try { localStorage.setItem(`doc_preview_${docId}`, url); } catch (_) { /* ignore */ }
+  };
+  const loadPreview = (docId: number): string | undefined => {
+    try { return localStorage.getItem(`doc_preview_${docId}`) ?? undefined; } catch (_) { return undefined; }
+  };
+  const removePreview = (docId: number) => {
+    try { localStorage.removeItem(`doc_preview_${docId}`); } catch (_) { /* ignore */ }
+  };
+
   const loadDocs = async () => {
     try {
       const res = await api.documents.list();
-      setDocs(res.documents);
-      if (res.documents.length > 0) setSelected(res.documents[0]);
+      // Восстанавливаем превью из localStorage
+      const withPreviews = res.documents.map((d) => ({ ...d, previewUrl: loadPreview(d.id) }));
+      setDocs(withPreviews);
+      if (withPreviews.length > 0) setSelected(withPreviews[0]);
     } finally {
       setLoading(false);
     }
@@ -111,7 +124,9 @@ export default function Documents() {
 
       const updated = await api.documents.list();
       const updatedDoc = updated.documents.find((d) => d.id === docId);
-      const finalDoc = { ...(updatedDoc || {}), recognizing: false, recognition: result };
+      // Сохраняем превью в localStorage — будет доступно после переключения вкладок
+      if (previewUrl) savePreview(docId, previewUrl);
+      const finalDoc = { ...(updatedDoc || {}), recognizing: false, recognition: result, previewUrl };
       setDocs((prev) => prev.map((d) => d.id === docId ? { ...d, ...finalDoc } : d));
       setSelected((prev) => prev?.id === docId ? { ...prev, ...finalDoc } : prev);
     } catch (err) {
@@ -139,6 +154,8 @@ export default function Documents() {
         size_label: `${(f.size / 1024 / 1024).toFixed(1)} МБ`,
         status: "processing",
       });
+      // Сохраняем превью в localStorage чтобы не терять при переключении вкладок
+      if (previewUrl) savePreview(res.document.id, previewUrl);
       const newDoc: DocWithRecognition = { ...res.document, status: "processing", recognizing: true, previewUrl };
       setDocs((prev) => [newDoc, ...prev]);
       setSelected(newDoc);
@@ -157,6 +174,7 @@ export default function Documents() {
   const handleDelete = async (id: number) => {
     if (!confirm("Удалить документ?")) return;
     await api.documents.delete(id);
+    removePreview(id);
     setDocs((prev) => prev.filter((d) => d.id !== id));
     if (selected?.id === id) setSelected(null);
   };
@@ -437,7 +455,7 @@ export default function Documents() {
       {/* Create transaction modal */}
       {showTxModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setShowTxModal(false)}>
-          <div className="w-full sm:max-w-md card-fin rounded-t-2xl sm:rounded-xl p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full sm:max-w-md card-fin rounded-t-2xl sm:rounded-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold">Создать операцию-расход</h2>
@@ -445,6 +463,14 @@ export default function Documents() {
               </div>
               <button onClick={() => setShowTxModal(false)} className="text-muted-foreground hover:text-foreground"><Icon name="X" size={18} /></button>
             </div>
+
+            {/* Document preview in modal */}
+            {selected?.previewUrl && (
+              <div className="rounded-lg overflow-hidden border border-border bg-secondary/30">
+                <div className="text-xs text-muted-foreground px-2 py-1 border-b border-border">Документ</div>
+                <img src={selected.previewUrl} alt="Документ" className="w-full max-h-40 object-contain" />
+              </div>
+            )}
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-muted-foreground block mb-1">Описание</label>

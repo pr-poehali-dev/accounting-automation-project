@@ -1,10 +1,12 @@
 """
 ИИ-распознавание документов (накладные, счета, чеки, договоры).
-POST / — принимает base64-изображение, возвращает структурированные поля + авто-создаёт транзакцию.
-Использует DeepSeek API. Для изображений — модель с vision (deepseek-chat с multimodal).
+POST / — принимает base64-изображение, выполняет OCR, передаёт текст в DeepSeek.
+Авто-создаёт транзакцию в БД.
 """
 import json
 import os
+import base64
+import re
 import urllib.request
 import urllib.error
 import psycopg2
@@ -18,42 +20,47 @@ CORS = {
     "Content-Type": "application/json",
 }
 
-SYSTEM_PROMPT = """Ты финансовый ИИ-бухгалтер для ИП. Анализируешь фото/скан финансового документа.
+SYSTEM_PROMPT = """Ты финансовый ИИ-бухгалтер для ИП России. Тебе даётся текст, извлечённый из фото/скана финансового документа (накладная, чек, счёт).
 
 ПРАВИЛА ОПРЕДЕЛЕНИЯ СТАТЬИ ЗАТРАТ (category):
-- Если в документе перечисляются товары, номенклатура, складские позиции, ТМЦ, комплектующие — category: "Закупка товара"
-- Если это чек АЗС, заправки, топливо (АИ-92, АИ-95, ДТ, бензин, солярка) — category: "ГСМ"
-- Если в акте указаны информационные, юридические, бухгалтерские, консультационные услуги — category: "Бухгалтерские услуги"
-- Если это платёж за офис, склад, помещение, аренду — category: "Аренда"
-- Если зарплата, выплата сотруднику — category: "Зарплаты"
-- Если реклама, маркетинг, продвижение — category: "Маркетинг"
-- Если доставка, транспорт, логистика, перевозка — category: "Логистика"
-- Если оборудование, техника, инструмент — category: "Оборудование"
-- Во всех остальных случаях — самостоятельно проанализируй контекст и дай лаконичное название (1-3 слова)
+- Номенклатура, товары, позиции ТМЦ, складские позиции → "Закупка товара"
+- АЗС, топливо, бензин АИ-92/95, ДТ, солярка → "ГСМ"
+- Юридические, бухгалтерские, консультационные услуги → "Бухгалтерские услуги"
+- Офис, склад, помещение, аренда → "Аренда"
+- Зарплата, выплата сотрудникам → "Зарплаты"
+- Реклама, маркетинг, продвижение → "Маркетинг"
+- Доставка, транспорт, логистика → "Логистика"
+- Оборудование, техника, инструмент → "Оборудование"
+- Иначе — сформулируй сам (1-3 слова)
 
-Верни СТРОГО только JSON без лишнего текста:
+ВАЖНО ПО СУММЕ:
+- Ищи строки "Итого", "Всего", "ИТОГО", "Сумма", "К оплате", "на сумму"
+- Сумма может быть записана как "28 132,00" или "28132.00" или "28 132.00" — убери пробелы, замени запятую на точку
+- Верни только число, например: 28132.00
+
+Верни СТРОГО только JSON:
 {
-  "amount": 24500.00,
+  "amount": 28132.00,
   "date": "2026-05-21",
-  "category": "ГСМ",
-  "comment": "Чек АЗС Роснефть, АИ-95 50 литров",
-  "doc_type": "Чек",
-  "counterparty": "АЗС Роснефть",
+  "category": "Закупка товара",
+  "comment": "Накладная ТАМ000 — 21 наименование товара",
+  "doc_type": "Накладная",
+  "counterparty": "ООО Поставщик",
   "inn": null,
   "type": "expense"
 }
 
 Поля:
-- amount: итоговая сумма числом (только цифры и точка), null если не найдена
-- date: дата в формате YYYY-MM-DD, null если не найдена
-- category: статья по правилам выше
-- comment: краткое описание что куплено/оплачено (1-2 предложения)
+- amount: число с точкой, БЕЗ пробелов и символов. null если не найдено
+- date: YYYY-MM-DD. null если не найдено
+- category: по правилам выше
+- comment: что куплено/оплачено (1-2 предложения)
 - doc_type: Чек / Накладная / Счёт-фактура / Акт / Договор / Документ
-- counterparty: название продавца/поставщика, null если не найдено
-- inn: ИНН контрагента, null если не найден
-- type: "expense" (расход) или "income" (доход)
+- counterparty: продавец/поставщик или null
+- inn: ИНН или null
+- type: "expense" или "income"
 
-Если поле не определить — null. ТОЛЬКО JSON, никакого другого текста!"""
+ТОЛЬКО JSON, никакого другого текста!"""
 
 
 def get_api_key(conn):
@@ -67,8 +74,30 @@ def get_api_key(conn):
     return (row[0] or "") if row else ""
 
 
-def _post_deepseek(payload: dict, api_key: str, timeout: int = 50) -> str:
-    """Базовый POST к DeepSeek API."""
+def extract_text_from_image(image_b64: str) -> str:
+    """OCR через pytesseract."""
+    try:
+        import pytesseract
+        from PIL import Image
+        import io
+        img_bytes = base64.b64decode(image_b64)
+        img = Image.open(io.BytesIO(img_bytes))
+        # Увеличиваем контрастность для лучшего OCR
+        img = img.convert("L")  # grayscale
+        text = pytesseract.image_to_string(img, lang="rus+eng", config="--psm 6")
+        return text.strip()
+    except Exception as e:
+        return f"[OCR недоступен: {e}]"
+
+
+def _post_deepseek(messages: list, api_key: str, timeout: int = 55) -> str:
+    payload = {
+        "model": "deepseek-chat",
+        "messages": messages,
+        "max_tokens": 700,
+        "temperature": 0.05,
+        "response_format": {"type": "json_object"},
+    }
     req = urllib.request.Request(
         "https://api.deepseek.com/v1/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
@@ -80,51 +109,25 @@ def _post_deepseek(payload: dict, api_key: str, timeout: int = 50) -> str:
         return data["choices"][0]["message"]["content"]
 
 
-def call_deepseek(image_b64: str, mime_type: str, file_name: str, api_key: str) -> str:
-    """Вызов DeepSeek. Для изображений пробуем vision, если не поддерживается — текстовый fallback."""
+def call_ai(image_b64: str, mime_type: str, file_name: str, api_key: str) -> str:
+    """OCR → DeepSeek text."""
     if image_b64:
-        # Пробуем vision через deepseek-chat (поддерживает изображения через compatible API)
-        vision_payload = {
-            "model": "deepseek-chat",
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_b64}"}},
-                        {"type": "text", "text": "Распознай финансовый документ. Верни только JSON."},
-                    ],
-                },
-            ],
-            "max_tokens": 700,
-            "temperature": 0.05,
-        }
-        try:
-            return _post_deepseek(vision_payload, api_key)
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="replace")
-            # Если vision не поддерживается — пробуем текстовый fallback
-            if e.code in (400, 422):
-                pass  # fallthrough to text
-            else:
-                raise
+        ocr_text = extract_text_from_image(image_b64)
+        user_content = (
+            f"Имя файла: «{file_name}»\n\n"
+            f"Текст распознан из изображения (OCR):\n```\n{ocr_text[:3000]}\n```\n\n"
+            "Проанализируй и верни JSON."
+        )
+    else:
+        user_content = (
+            f"Имя файла документа: «{file_name}».\n"
+            "Определи тип документа по имени файла. Числовые поля — null."
+        )
 
-    # Текстовый режим (для PDF или fallback)
-    text_payload = {
-        "model": "deepseek-chat",
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": (
-                f"Имя файла документа: «{file_name}».\n"
-                "Определи по имени файла что это за документ и заполни JSON. "
-                "Все числовые поля — null если не определить по имени файла."
-            )},
-        ],
-        "max_tokens": 500,
-        "temperature": 0.05,
-        "response_format": {"type": "json_object"},
-    }
-    return _post_deepseek(text_payload, api_key)
+    return _post_deepseek([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ], api_key)
 
 
 def parse_response(text: str) -> dict:
@@ -143,14 +146,60 @@ def parse_response(text: str) -> dict:
 
 
 def clean_amount(raw) -> float | None:
-    s = str(raw or "")
-    cleaned = "".join(c for c in s if c.isdigit() or c == ".")
-    if not cleaned:
+    """Парсит сумму: '28 132,00' → 28132.0, '28132.00' → 28132.0"""
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw) if raw > 0 else None
+    s = str(raw).strip()
+    # Убираем валютные символы и лишние слова
+    s = re.sub(r"[₽руб\.RUBrub\s]", " ", s, flags=re.IGNORECASE)
+    s = s.strip()
+    # Формат: 28 132,00 или 28 132.00 — пробел как разделитель тысяч
+    # Если есть и пробел и запятая/точка — убираем пробелы, меняем запятую на точку
+    if re.match(r"^\d[\d\s]*[,\.]\d{2}$", s):
+        s = s.replace(" ", "").replace(",", ".")
+    else:
+        # Просто убираем всё кроме цифр, точки, запятой
+        s = re.sub(r"[^\d,\.]", "", s)
+        # Если запятая — десятичный разделитель (последняя)
+        if s.count(",") == 1 and s.count(".") == 0:
+            s = s.replace(",", ".")
+        elif s.count(",") >= 1:
+            # Запятая как разделитель тысяч: 28,132.00 → убираем запятые
+            s = s.replace(",", "")
+    if not s:
         return None
     try:
-        return float(cleaned)
+        val = float(s)
+        return val if val > 0 else None
     except Exception:
         return None
+
+
+def normalize_date(raw: str | None) -> tuple[str, bool]:
+    """Возвращает (iso_date, was_found)."""
+    today = str(date_cls.today())
+    if not raw:
+        return today, False
+    raw = str(raw).strip()
+    # уже ISO
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
+        return raw, True
+    # ДД.ММ.ГГГГ
+    m = re.match(r"^(\d{2})\.(\d{2})\.(\d{4})$", raw)
+    if m:
+        return f"{m.group(3)}-{m.group(2)}-{m.group(1)}", True
+    # ДД.ММ.ГГ
+    m = re.match(r"^(\d{2})\.(\d{2})\.(\d{2})$", raw)
+    if m:
+        year = f"20{m.group(3)}"
+        return f"{year}-{m.group(2)}-{m.group(1)}", True
+    # ГГГГ.ММ.ДД
+    m = re.match(r"^(\d{4})\.(\d{2})\.(\d{2})$", raw)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)}", True
+    return today, False
 
 
 def handler(event: dict, context) -> dict:
@@ -158,15 +207,15 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
     if event.get("httpMethod") != "POST":
-        return {"statusCode": 405, "headers": CORS, "body": json.dumps({"error": "Method not allowed"})}
+        return {"statusCode": 405, "headers": CORS,
+                "body": json.dumps({"error": "Method not allowed"})}
 
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     try:
         api_key = get_api_key(conn)
         if not api_key:
             return {
-                "statusCode": 400,
-                "headers": CORS,
+                "statusCode": 400, "headers": CORS,
                 "body": json.dumps({"error": "API ключ не настроен. Добавьте ключ DeepSeek в Настройки → Нейросеть."}, ensure_ascii=False),
             }
 
@@ -174,20 +223,14 @@ def handler(event: dict, context) -> dict:
         image_b64 = body.get("image_b64", "")
         mime_type = body.get("mime_type", "image/jpeg")
         file_name = body.get("file_name", "document")
-        doc_id = body.get("doc_id")           # если уже создан документ
-        auto_create_tx = body.get("auto_create_tx", True)  # авто-создать транзакцию
+        doc_id = body.get("doc_id")
+        auto_create_tx = body.get("auto_create_tx", True)
 
-        # Вызов ИИ
-        raw = call_deepseek(image_b64, mime_type, file_name, api_key)
+        raw = call_ai(image_b64, mime_type, file_name, api_key)
         fields = parse_response(raw)
 
         amount = clean_amount(fields.get("amount"))
-        tx_date = fields.get("date") or str(date_cls.today())
-        # Нормализуем дату — может прийти в формате ДД.ММ.ГГГГ
-        if tx_date and "." in tx_date:
-            parts = tx_date.split(".")
-            if len(parts) == 3 and len(parts[2]) == 4:
-                tx_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
+        tx_date, date_found = normalize_date(fields.get("date"))
         category = fields.get("category") or "Прочее"
         comment = fields.get("comment") or fields.get("description") or ""
         doc_type = fields.get("doc_type") or "Документ"
@@ -195,15 +238,19 @@ def handler(event: dict, context) -> dict:
         inn = fields.get("inn")
         tx_type = fields.get("type", "expense")
 
-        # Обновляем запись документа если есть doc_id
         cur = conn.cursor()
+
+        # Обновляем документ
         if doc_id:
+            amt_str = None
+            if amount:
+                amt_str = f"₽ {amount:,.0f}".replace(",", " ")
             cur.execute(f"""
                 UPDATE {SCHEMA}.documents
                 SET status='done', rec_type=%s, rec_amount=%s, rec_date=%s,
                     rec_counterparty=%s, rec_inn=%s
                 WHERE id=%s
-            """, (doc_type, str(amount) if amount else None, tx_date, counterparty, inn, doc_id))
+            """, (doc_type, amt_str, tx_date if date_found else None, counterparty, inn, doc_id))
 
         # Авто-создаём транзакцию
         tx_id = None
@@ -228,33 +275,33 @@ def handler(event: dict, context) -> dict:
             "doc_type": doc_type,
             "counterparty": counterparty,
             "inn": inn,
-            "date": tx_date if fields.get("date") else None,
+            "date": tx_date if date_found else None,
             "amount": amount,
             "amount_str": f"₽ {amount:,.0f}".replace(",", " ") if amount else None,
             "description": comment,
             "category": category,
             "type": tx_type,
             "transaction_id": tx_id,
-            "date_found": bool(fields.get("date")),
+            "date_found": date_found,
         }
 
         return {
-            "statusCode": 200,
-            "headers": CORS,
+            "statusCode": 200, "headers": CORS,
             "body": json.dumps(result, ensure_ascii=False, default=str),
         }
 
     except urllib.error.HTTPError as e:
         err_body = e.read().decode("utf-8", errors="replace")
-        # DeepSeek может вернуть ошибку если модель не поддерживает vision
         msg = f"DeepSeek API ошибка {e.code}"
         try:
             err_json = json.loads(err_body)
             msg = err_json.get("error", {}).get("message", msg)
         except Exception:
             pass
-        return {"statusCode": 200, "headers": CORS, "body": json.dumps({"error": msg, "detail": err_body[:300]}, ensure_ascii=False)}
+        return {"statusCode": 200, "headers": CORS,
+                "body": json.dumps({"error": msg, "detail": err_body[:300]}, ensure_ascii=False)}
     except Exception as ex:
-        return {"statusCode": 200, "headers": CORS, "body": json.dumps({"error": str(ex)}, ensure_ascii=False)}
+        return {"statusCode": 200, "headers": CORS,
+                "body": json.dumps({"error": str(ex)}, ensure_ascii=False)}
     finally:
         conn.close()
