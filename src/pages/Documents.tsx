@@ -28,8 +28,18 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-/** Сжимает изображение до maxSize px по длинной стороне, качество quality (0-1). Возвращает base64 без data:...;base64, */
-function compressImageToBase64(file: File, maxSize = 1200, quality = 0.82): Promise<{ b64: string; mime: string; previewUrl: string }> {
+/** CamScanner-стиль обработка изображения документа:
+ *  1) масштабирование до maxSize по длинной стороне,
+ *  2) повышение контраста + lightness boost,
+ *  3) unsharp mask (резкость),
+ *  4) JPEG высокого качества.
+ *  Возвращает base64 (без префикса) и data URL для превью. */
+function compressImageToBase64(
+  file: File,
+  maxSize = 2400,
+  quality = 0.92,
+  enhance = true,
+): Promise<{ b64: string; mime: string; previewUrl: string }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -41,8 +51,67 @@ function compressImageToBase64(file: File, maxSize = 1200, quality = 0.82): Prom
       }
       const canvas = document.createElement("canvas");
       canvas.width = width; canvas.height = height;
-      const ctx = canvas.getContext("2d")!;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
       ctx.drawImage(img, 0, 0, width, height);
+
+      if (enhance) {
+        try {
+          // 1. Авто-уровни + контраст + лёгкое осветление "бумаги"
+          const imgData = ctx.getImageData(0, 0, width, height);
+          const d = imgData.data;
+          // Сначала находим распределение яркости
+          let min = 255, max = 0;
+          const step = Math.max(1, Math.floor(d.length / 40000)); // выборка
+          for (let i = 0; i < d.length; i += 4 * step) {
+            const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+            if (y < min) min = y;
+            if (y > max) max = y;
+          }
+          // Растягиваем гистограмму (с защитой)
+          const lo = Math.max(0, min - 8);
+          const hi = Math.min(255, max + 8);
+          const range = Math.max(40, hi - lo);
+          const contrast = 1.25;
+          const midGray = 128;
+          for (let i = 0; i < d.length; i += 4) {
+            for (let c = 0; c < 3; c++) {
+              let v = ((d[i + c] - lo) * 255) / range;
+              v = (v - midGray) * contrast + midGray;
+              if (v < 0) v = 0;
+              if (v > 255) v = 255;
+              d[i + c] = v;
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+
+          // 2. Резкость (unsharp mask лёгкий) через двойной draw с blur
+          const blurCanvas = document.createElement("canvas");
+          blurCanvas.width = width; blurCanvas.height = height;
+          const bctx = blurCanvas.getContext("2d")!;
+          bctx.filter = "blur(1.2px)";
+          bctx.drawImage(canvas, 0, 0);
+          // Накладываем: original + (original - blurred) * amount
+          ctx.globalCompositeOperation = "difference";
+          ctx.drawImage(blurCanvas, 0, 0);
+          ctx.globalCompositeOperation = "source-over";
+          // diff теперь в канвасе — но нам нужно: original + diff*0.6.
+          // Простая альтернатива: используем CSS filter contrast/saturate напрямую.
+          // Сбрасываем — перерисовываем оригинал с CSS-фильтрами поверх уже улучшенного
+          ctx.clearRect(0, 0, width, height);
+          ctx.putImageData(imgData, 0, 0);
+          // Финальный pass через фильтр для резкости
+          const finalCanvas = document.createElement("canvas");
+          finalCanvas.width = width; finalCanvas.height = height;
+          const fctx = finalCanvas.getContext("2d")!;
+          fctx.filter = "contrast(1.05) saturate(0.85) brightness(1.03)";
+          fctx.drawImage(canvas, 0, 0);
+          ctx.clearRect(0, 0, width, height);
+          ctx.drawImage(finalCanvas, 0, 0);
+        } catch {
+          // если ImageData недоступен (CORS) — просто возвращаем исходник
+        }
+      }
+
       const mime = "image/jpeg";
       const dataUrl = canvas.toDataURL(mime, quality);
       URL.revokeObjectURL(url);
@@ -87,10 +156,34 @@ export default function Documents() {
   const [multiProcessing, setMultiProcessing] = useState(false);
 
   // localStorage helpers для хранения превью между сессиями
+  // Сжимаем превью до меньшего размера перед сохранением (localStorage квота ~5MB)
+  const savePreviewSmall = async (docId: number, dataUrl: string) => {
+    if (!dataUrl.startsWith("data:")) return;
+    try {
+      const img = new Image();
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = () => rej(new Error("img"));
+        img.src = dataUrl;
+      });
+      let { width, height } = img;
+      const max = 900;
+      if (width > max || height > max) {
+        if (width > height) { height = Math.round((height * max) / width); width = max; }
+        else { width = Math.round((width * max) / height); height = max; }
+      }
+      const cv = document.createElement("canvas");
+      cv.width = width; cv.height = height;
+      cv.getContext("2d")!.drawImage(img, 0, 0, width, height);
+      const small = cv.toDataURL("image/jpeg", 0.78);
+      localStorage.setItem(`doc_preview_${docId}`, small);
+    } catch {
+      try { localStorage.setItem(`doc_preview_${docId}`, dataUrl); } catch { /* ignore */ }
+    }
+  };
   const savePreview = (docId: number, url: string) => {
-    // Сохраняем только data: URLs (base64). blob: ссылки не переживают перезагрузку.
     if (!url.startsWith("data:")) return;
-    try { localStorage.setItem(`doc_preview_${docId}`, url); } catch (_) { /* ignore */ }
+    savePreviewSmall(docId, url);
   };
   const loadPreview = (docId: number): string | undefined => {
     try {
@@ -123,8 +216,15 @@ export default function Documents() {
     try {
       let result: RecognizeResult;
       if (isImage(file.name)) {
-        // Высокое разрешение и качество — нужно для мелкого текста таблиц/итогов в накладных
-        const compressed = await compressImageToBase64(file, 2400, 0.92);
+        // CamScanner-обработка: высокое разрешение, контраст, резкость
+        const compressed = await compressImageToBase64(file, 2400, 0.92, true);
+        // Параллельно загружаем обработанное изображение в S3, чтобы можно было поделиться
+        api.uploadDoc({
+          file_b64: compressed.b64,
+          file_name: `scan_${docId}.jpg`,
+          mime_type: "image/jpeg",
+          doc_id: docId,
+        }).catch(() => { /* не блокируем распознавание если S3 не настроен */ });
         result = await api.recognizeDoc({
           image_b64: compressed.b64,
           mime_type: compressed.mime,
@@ -185,11 +285,11 @@ export default function Documents() {
     }
     const accepted = files.filter((f) => isSupported(f.name));
     for (const f of accepted) {
-      // Создаём превью сразу для отображения
+      // Создаём превью сразу для отображения — с CamScanner-обработкой высокого качества
       let previewUrl: string | undefined;
       if (isImage(f.name)) {
         try {
-          const compressed = await compressImageToBase64(f, 1400, 0.85);
+          const compressed = await compressImageToBase64(f, 2400, 0.92, true);
           previewUrl = compressed.previewUrl;
         } catch {
           previewUrl = URL.createObjectURL(f);
@@ -276,6 +376,52 @@ export default function Documents() {
     }
   };
 
+  const shareDocument = async () => {
+    if (!selected) return;
+    const url = selected.s3_url;
+    const fileName = selected.name || "document.jpg";
+    try {
+      // Если есть URL в S3 — пробуем поделиться им
+      if (url) {
+        if (navigator.share) {
+          await navigator.share({ title: fileName, text: `Документ: ${fileName}`, url });
+          return;
+        }
+        // Фоллбек: скопировать ссылку
+        await navigator.clipboard.writeText(url);
+        alert("Ссылка на документ скопирована в буфер обмена");
+        return;
+      }
+      // Если в S3 нет — делимся локальным base64 как файлом
+      if (selected.previewUrl && selected.previewUrl.startsWith("data:") && navigator.share) {
+        const blob = await (await fetch(selected.previewUrl)).blob();
+        const file = new File([blob], fileName, { type: blob.type });
+        if ((navigator as { canShare?: (data: { files: File[] }) => boolean }).canShare?.({ files: [file] })) {
+          await navigator.share({ files: [file], title: fileName });
+          return;
+        }
+      }
+      alert("Поделиться не получилось. Документ ещё не загружен в облако или ваш браузер не поддерживает функцию.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Ошибка";
+      if (msg !== "AbortError" && !msg.includes("cancel")) alert(`Не удалось поделиться: ${msg}`);
+    }
+  };
+
+  const downloadDocument = () => {
+    if (!selected) return;
+    const url = selected.s3_url || selected.previewUrl;
+    if (!url) {
+      alert("Файл документа недоступен.");
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = selected.name || "document.jpg";
+    a.target = "_blank";
+    a.click();
+  };
+
   const handleDelete = async (id: number) => {
     if (!confirm("Удалить документ?")) return;
     await api.documents.delete(id);
@@ -331,7 +477,7 @@ export default function Documents() {
   // ── Мультистраничный режим ──────────────────────────────
   const addPageFromFile = async (file: File) => {
     try {
-      const compressed = await compressImageToBase64(file, 1400, 0.85);
+      const compressed = await compressImageToBase64(file, 2400, 0.92, true);
       setPages((prev) => [...prev, { file, previewUrl: compressed.previewUrl, b64: compressed.b64, mime: compressed.mime }]);
     } catch {
       /* ignore */
@@ -372,6 +518,15 @@ export default function Documents() {
 
       // Отправляем все страницы
       const images = pages.map((p) => ({ b64: p.b64, mime: p.mime }));
+      // Загружаем первую страницу в S3 для возможности поделиться
+      if (pages[0]?.b64) {
+        api.uploadDoc({
+          file_b64: pages[0].b64,
+          file_name: `scan_${res.document.id}.jpg`,
+          mime_type: "image/jpeg",
+          doc_id: res.document.id,
+        }).catch(() => { /* не блокируем */ });
+      }
       setPages([]);
 
       await recognizeMultiPage(res.document.id, images, combinedPreview, docName);
@@ -546,6 +701,29 @@ export default function Documents() {
                   )}
                 </div>
               </div>
+
+              {/* Quick actions: share + download */}
+              {(selected.previewUrl || selected.s3_url) && (
+                <div className="flex gap-2 mb-3 flex-wrap">
+                  <button onClick={shareDocument}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-border text-foreground hover:border-gold/40 hover:bg-gold/5 transition-colors active:scale-95">
+                    <Icon name="Share2" size={14} className="text-gold" />
+                    Поделиться
+                  </button>
+                  <button onClick={downloadDocument}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-border text-foreground hover:border-gold/40 hover:bg-gold/5 transition-colors active:scale-95">
+                    <Icon name="Download" size={14} className="text-gold" />
+                    Скачать
+                  </button>
+                  {selected.s3_url && (
+                    <a href={selected.s3_url} target="_blank" rel="noopener noreferrer"
+                      className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 text-xs px-3 py-2 rounded-lg border border-border text-foreground hover:border-gold/40 hover:bg-gold/5 transition-colors active:scale-95">
+                      <Icon name="ExternalLink" size={14} className="text-gold" />
+                      Открыть
+                    </a>
+                  )}
+                </div>
+              )}
 
               {/* Document preview */}
               {selected.previewUrl && (

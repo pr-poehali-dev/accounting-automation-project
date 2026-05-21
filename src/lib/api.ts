@@ -219,6 +219,7 @@ export interface DocRecord {
   rec_counterparty: string | null;
   rec_inn: string | null;
   created_at: string;
+  s3_url?: string | null;
 }
 
 export interface TaxReport {

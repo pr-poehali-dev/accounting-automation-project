@@ -40,12 +40,12 @@ def handler(event: dict, context) -> dict:
         if method == "GET":
             cur.execute(f"""
                 SELECT id, name, size_label, file_key, status,
-                       rec_type, rec_amount, rec_date, rec_counterparty, rec_inn, created_at
+                       rec_type, rec_amount, rec_date, rec_counterparty, rec_inn, created_at, s3_url
                 FROM {SCHEMA}.documents
                 ORDER BY created_at DESC
             """)
             cols = ["id","name","size_label","file_key","status",
-                    "rec_type","rec_amount","rec_date","rec_counterparty","rec_inn","created_at"]
+                    "rec_type","rec_amount","rec_date","rec_counterparty","rec_inn","created_at","s3_url"]
             rows = [dict(zip(cols, r)) for r in cur.fetchall()]
             return resp(200, {"documents": rows})
 
