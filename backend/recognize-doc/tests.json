@@ -7,11 +7,11 @@
       "expectedStatus": 200
     },
     {
-      "name": "POST no image returns error or result",
+      "name": "POST no image still returns 200",
       "method": "POST",
       "path": "/",
       "body": {"file_name": "invoice_test.pdf"},
-      "expectedStatus": [200, 400],
+      "expectedStatus": 200,
       "bodyMatcher": "any"
     }
   ]

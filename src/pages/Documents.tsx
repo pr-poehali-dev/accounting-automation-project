@@ -8,8 +8,24 @@ function isImage(name: string) {
   return /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(name);
 }
 
+function isExcel(name: string) {
+  return /\.(xlsx|xls)$/i.test(name);
+}
+
 function isSupported(name: string) {
-  return /\.(pdf|jpg|jpeg|png|webp|gif|bmp)$/i.test(name);
+  return /\.(pdf|jpg|jpeg|png|webp|gif|bmp|xlsx|xls)$/i.test(name);
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(",")[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 /** Сжимает изображение до maxSize px по длинной стороне, качество quality (0-1). Возвращает base64 без data:...;base64, */
@@ -119,6 +135,14 @@ export default function Documents() {
           doc_id: docId,
           auto_create_tx: true,
         });
+      } else if (isExcel(file.name)) {
+        const b64 = await fileToBase64(file);
+        result = await api.recognizeDoc({
+          excel_b64: b64,
+          file_name: file.name,
+          doc_id: docId,
+          auto_create_tx: true,
+        });
       } else {
         result = await api.recognizeDoc({
           file_name: file.name,
@@ -159,7 +183,7 @@ export default function Documents() {
     if (skipped.length) {
       alert(
         `Не поддерживается: ${skipped.map((f) => f.name).join(", ")}\n\n` +
-        "ИИ распознаёт только PDF, JPG, PNG. Excel-файлы (.xls/.xlsx) откройте и сохраните как PDF."
+        "ИИ распознаёт: PDF, JPG, PNG, XLS, XLSX."
       );
     }
     const accepted = files.filter((f) => isSupported(f.name));
@@ -358,8 +382,8 @@ export default function Documents() {
           className="flex flex-col items-center justify-center gap-2 p-4 card-fin border-dashed border-border/60 rounded-xl text-muted-foreground active:scale-95 transition-transform">
           <Icon name="Upload" size={26} />
           <span className="text-sm font-medium">Загрузить файл</span>
-          <span className="text-xs">PDF, JPG, PNG</span>
-          <input ref={inputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png" className="hidden"
+          <span className="text-xs">PDF, JPG, PNG, XLS</span>
+          <input ref={inputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" className="hidden"
             onChange={(e) => e.target.files && addFiles(Array.from(e.target.files))} />
         </button>
       </div>
@@ -388,8 +412,8 @@ export default function Documents() {
               className={`border-2 border-dashed rounded-lg p-5 text-center cursor-pointer transition-all ${dragging ? "border-gold bg-gold/5" : "border-border hover:border-gold/40 hover:bg-secondary/50"}`}>
               <Icon name="Upload" size={24} className={`mx-auto mb-2 ${dragging ? "text-gold" : "text-muted-foreground"}`} />
               <div className="text-sm font-medium mb-1">Перетащите или нажмите</div>
-              <div className="text-xs text-muted-foreground">PDF, JPG, PNG — ИИ распознает автоматически</div>
-              <input ref={inputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png" className="hidden"
+              <div className="text-xs text-muted-foreground">PDF, JPG, PNG, XLS — ИИ распознает автоматически</div>
+              <input ref={inputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" className="hidden"
                 onChange={(e) => e.target.files && addFiles(Array.from(e.target.files))} />
             </div>
           </div>

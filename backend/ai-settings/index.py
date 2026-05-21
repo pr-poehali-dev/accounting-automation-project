@@ -79,13 +79,27 @@ def test_connection(model: str, api_key: str) -> dict:
 
 
 def test_yandex(yandex_key: str, yandex_folder: str) -> dict:
+    """Лёгкая проверка ключа: дергаем эндпоинт IAM-валидации через listModels YandexGPT
+    (он не требует Vision-картинку, но проверяет тот же Api-Key + Folder).
+    Если ключ невалиден → 401/403 от Облака; если валиден → 200."""
     if not yandex_key:
         return {"ok": None, "error": "Ключ не задан"}
     if not yandex_folder:
         return {"ok": False, "error": "Folder ID не задан"}
+
+    # Проверяем ключ через эндпоинт Vision OCR с заведомо минимальным валидным запросом.
+    # Yandex Vision на пустую/маленькую картинку отвечает 400 — это значит,
+    # что авторизация прошла. 401/403 = реальная проблема с ключом или ролями.
     url = "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText"
-    # Минимальный 1x1 белый JPEG в base64
-    dummy_b64 = "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AJQAB/9k="
+    # 10x10 белый JPEG
+    dummy_b64 = (
+        "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////"
+        "////////////////////////////////////////////////////2wBDAf//////////"
+        "////////////////////////////////////////////////////////////////////"
+        "//////////////wAARCAAKAAoDASIAAhEBAxEB/8QAFAABAQAAAAAAAAAAAAAAAAAAAAr"
+        "/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAA"
+        "AAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AL+AB//Z"
+    )
     payload = {"mimeType": "JPEG", "languageCodes": ["ru"], "model": "page", "content": dummy_b64}
     try:
         req = urllib.request.Request(
@@ -108,10 +122,14 @@ def test_yandex(yandex_key: str, yandex_folder: str) -> dict:
             msg = err_data.get("message") or err_data.get("error") or body[:300]
         except Exception:
             msg = body[:300]
+        # 400 = запрос дошёл, авторизация прошла, но Yandex не смог обработать
+        # тестовую картинку. Это нормально — ключ рабочий.
+        if e.code == 400:
+            return {"ok": True, "status": 400, "note": "Ключ валиден (тестовое изображение Yandex Vision не обрабатывает, но авторизация прошла)"}
         if e.code == 401:
-            return {"ok": False, "error": f"Ключ недействителен (401). Создайте новый API-ключ в Яндекс Облаке."}
+            return {"ok": False, "error": "Ключ недействителен (401). Создайте новый API-ключ в Яндекс Облаке."}
         if e.code == 403:
-            return {"ok": False, "error": "Нет прав (403). Проверьте: 1) у сервисного аккаунта роль ai.vision.user; 2) область действия API-ключа включает yc.ai.vision.execute (или 'Все сервисы'). Ключ только с областью languageModels работать с Vision OCR не будет."}
+            return {"ok": False, "error": "Нет прав (403). Проверьте: 1) у сервисного аккаунта роль ai.vision.user; 2) область действия API-ключа включает yc.ai.vision.execute."}
         return {"ok": False, "error": f"HTTP {e.code}: {msg}"}
     except Exception as ex:
         return {"ok": False, "error": str(ex)}

@@ -304,6 +304,87 @@ def normalize_date(raw) -> tuple:
     return today, False
 
 
+def extract_excel_text(excel_b64: str, file_name: str) -> str:
+    """Извлекает текст из xls/xlsx — все ячейки всех листов."""
+    data = base64.b64decode(excel_b64)
+    is_xlsx = file_name.lower().endswith(".xlsx")
+    lines = []
+    if is_xlsx:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
+        for ws in wb.worksheets:
+            lines.append(f"=== Лист: {ws.title} ===")
+            for row in ws.iter_rows(values_only=True):
+                row_text = " | ".join(str(c) for c in row if c is not None)
+                if row_text.strip():
+                    lines.append(row_text)
+    else:
+        import xlrd
+        wb = xlrd.open_workbook(file_contents=data)
+        for sheet in wb.sheets():
+            lines.append(f"=== Лист: {sheet.name} ===")
+            for r in range(sheet.nrows):
+                row_vals = [sheet.cell_value(r, c) for c in range(sheet.ncols)]
+                row_text = " | ".join(str(v) for v in row_vals if v not in (None, ""))
+                if row_text.strip():
+                    lines.append(row_text)
+    return "\n".join(lines)
+
+
+def analyze_text_with_ai(text: str, file_name: str, deepseek_key: str,
+                          yandex_key: str, yandex_folder: str, gemini_key: str) -> dict:
+    """Анализирует текст таблицы через любой доступный ИИ (без vision)."""
+    user_msg = (
+        f"Имя файла: «{file_name}»\n\n"
+        f"Содержимое таблицы (Excel):\n```\n{text[:5000]}\n```\n\n"
+        "Найди ИТОГОВУЮ сумму к оплате, дату и контрагента. Верни JSON."
+    )
+    # 1. YandexGPT
+    if yandex_key and yandex_folder:
+        try:
+            return yandex_gpt_analyze(text, file_name, yandex_key, yandex_folder)
+        except Exception:
+            pass
+    # 2. DeepSeek
+    if deepseek_key:
+        try:
+            payload = {
+                "model": "deepseek-chat",
+                "messages": [
+                    {"role": "system", "content": ANALYSIS_PROMPT},
+                    {"role": "user", "content": user_msg},
+                ],
+                "max_tokens": 500, "temperature": 0.05,
+                "response_format": {"type": "json_object"},
+            }
+            req = urllib.request.Request("https://api.deepseek.com/v1/chat/completions",
+                                          data=json.dumps(payload).encode(),
+                                          headers={"Content-Type": "application/json",
+                                                   "Authorization": f"Bearer {deepseek_key}"},
+                                          method="POST")
+            with urllib.request.urlopen(req, timeout=30) as r:
+                resp = json.loads(r.read().decode())
+            return parse_json(resp["choices"][0]["message"]["content"])
+        except Exception:
+            pass
+    # 3. Gemini
+    if gemini_key:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
+            payload = {
+                "contents": [{"parts": [{"text": ANALYSIS_PROMPT + "\n\n" + user_msg}]}],
+                "generationConfig": {"temperature": 0.05, "maxOutputTokens": 500, "responseMimeType": "application/json"},
+            }
+            req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                          headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=45) as r:
+                resp = json.loads(r.read().decode())
+            return parse_json(resp["candidates"][0]["content"]["parts"][0]["text"])
+        except Exception:
+            pass
+    return {}
+
+
 def preprocess(b64: str) -> tuple:
     try:
         from PIL import Image, ImageEnhance, ImageFilter
@@ -331,6 +412,7 @@ def handler(event: dict, context) -> dict:
         body = json.loads(event.get("body") or "{}")
         images_list = body.get("images", [])
         image_b64 = body.get("image_b64", "")
+        excel_b64 = body.get("excel_b64", "")
         mime_type = body.get("mime_type", "image/jpeg")
         file_name = body.get("file_name", "document")
         doc_id = body.get("doc_id")
@@ -343,6 +425,17 @@ def handler(event: dict, context) -> dict:
         fields = {}
         provider_used = "none"
         error_details = []
+
+        # ── Excel ветка ───────────────────────────────────────
+        if excel_b64:
+            try:
+                text = extract_excel_text(excel_b64, file_name)
+                fields = analyze_text_with_ai(text, file_name, deepseek_key, yandex_key, yandex_folder, gemini_key)
+                provider_used = "excel-ai"
+            except Exception as e:
+                error_details.append(f"Excel: {e}")
+                fields = {"doc_type": "Таблица Excel", "category": "Прочее",
+                          "comment": f"Не удалось прочитать файл: {e}"}
 
         # Подготавливаем список изображений
         if images_list:
