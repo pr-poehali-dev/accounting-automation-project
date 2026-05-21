@@ -1,6 +1,6 @@
 """
 ИИ-распознавание документов.
-Порядок: Gemini Flash (vision, бесплатный) → DeepSeek vision → DeepSeek текст.
+Порядок: Yandex Vision OCR → YandexGPT → DeepSeek текст fallback.
 POST / — принимает base64-изображение, авто-создаёт транзакцию в БД.
 """
 import json
@@ -21,7 +21,7 @@ CORS = {
     "Content-Type": "application/json",
 }
 
-ANALYSIS_PROMPT = """Ты финансовый ИИ-бухгалтер для ИП России. Смотришь на фото финансового документа.
+ANALYSIS_PROMPT = """Ты финансовый ИИ-бухгалтер для ИП России. Тебе дан текст, извлечённый из финансового документа (накладная, чек, счёт).
 
 ПРАВИЛА КАТЕГОРИИ (category):
 - Таблица с товарами / номенклатура / позиции ТМЦ → "Закупка товара"
@@ -35,18 +35,19 @@ ANALYSIS_PROMPT = """Ты финансовый ИИ-бухгалтер для И
 - Иначе — 1-3 слова своими словами
 
 ПРАВИЛА ТИПА (doc_type):
-- Таблица с наименованиями товаров, артикулами, ценами → "Накладная"
+- Есть наименования товаров, артикулы, цены — таблица → "Накладная"
 - Слова «накладная», «ТОРГ-12», «УПД», «ТМЦ» → "Накладная"
 - Кассовый чек, ФФД, QR-код ФНС → "Чек"
 - Счёт-фактура, УПД → "Счёт-фактура"
 - Акт выполненных работ → "Акт"
 
-ПРАВИЛА СУММЫ:
-- Ищи строки «Итого», «Всего», «ИТОГО», «К оплате», «на сумму»
-- «28 132,00» или «28 132.00» → верни 28132.00 (убери пробелы, замени запятую на точку)
+ПРАВИЛА СУММЫ — ОЧЕНЬ ВАЖНО:
+- Ищи строки «Итого», «Всего», «ИТОГО», «К оплате», «на сумму», «Сумма НДС»
+- Число может быть «28 132,00» или «28 132.00» — убери пробелы, замени запятую на точку → 28132.00
+- Верни только итоговую сумму к оплате (не НДС, не по отдельным позициям)
 
 Верни ТОЛЬКО JSON без лишнего текста:
-{"amount":28132.00,"date":"2026-05-21","category":"Закупка товара","comment":"Накладная — 21 позиция товара","doc_type":"Накладная","counterparty":"ООО Поставщик","inn":null,"type":"expense"}"""
+{"amount":28132.00,"date":"2026-05-21","category":"Закупка товара","comment":"Товарный чек №1839 — 38 позиций товара, итого 28132 руб","doc_type":"Накладная","counterparty":"Склад Дили","inn":null,"type":"expense"}"""
 
 TYPE_TO_CATEGORY = {
     "накладная": "Закупка товара",
@@ -66,19 +67,116 @@ def get_keys(conn):
     cur.execute(f"SELECT api_key, gemini_api_key FROM {SCHEMA}.ai_settings WHERE id=1")
     row = cur.fetchone()
     cur.close()
-    if not row:
-        return "", ""
-    deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "") or (row[0] or "")
-    gemini_key = os.environ.get("GEMINI_API_KEY", "") or (row[1] or "")
-    return deepseek_key, gemini_key
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "") or (row[0] if row else "") or ""
+    gemini_key = os.environ.get("GEMINI_API_KEY", "") or (row[1] if row else "") or ""
+    yandex_key = os.environ.get("YANDEX_API_KEY", "")
+    yandex_folder = os.environ.get("YANDEX_FOLDER_ID", "")
+    return deepseek_key, gemini_key, yandex_key, yandex_folder
 
+
+# ── Yandex Vision OCR ──────────────────────────────────────────────────────
+
+def yandex_ocr(image_b64: str, yandex_key: str, yandex_folder: str) -> str:
+    """Извлекает текст из изображения через Yandex Vision OCR."""
+    url = "https://ocr.api.cloud.yandex.net/ocr/v1/recognizeText"
+    payload = {
+        "mimeType": "JPEG",
+        "languageCodes": ["ru", "en"],
+        "model": "page",
+        "content": image_b64,
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Api-Key {yandex_key}",
+            "x-folder-id": yandex_folder,
+            "x-data-logging-enabled": "false",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        resp = json.loads(r.read().decode("utf-8"))
+
+    # Собираем весь текст из блоков
+    lines = []
+    result = resp.get("result", {})
+    for block in result.get("textAnnotation", {}).get("blocks", []):
+        for line in block.get("lines", []):
+            words = [w.get("text", "") for w in line.get("words", [])]
+            if words:
+                lines.append(" ".join(words))
+    return "\n".join(lines)
+
+
+# ── YandexGPT анализ текста ───────────────────────────────────────────────
+
+def yandex_gpt_analyze(ocr_text: str, file_name: str, yandex_key: str, yandex_folder: str) -> dict:
+    """Анализирует OCR-текст через YandexGPT и возвращает структурированные данные."""
+    url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+    payload = {
+        "modelUri": f"gpt://{yandex_folder}/yandexgpt/latest",
+        "completionOptions": {
+            "stream": False,
+            "temperature": 0.05,
+            "maxTokens": 800,
+        },
+        "messages": [
+            {"role": "system", "text": ANALYSIS_PROMPT},
+            {
+                "role": "user",
+                "text": (
+                    f"Имя файла: «{file_name}»\n\n"
+                    f"Текст документа (OCR):\n```\n{ocr_text[:5000]}\n```\n\n"
+                    "Найди ИТОГОВУЮ сумму и заполни все поля. Верни JSON."
+                ),
+            },
+        ],
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Api-Key {yandex_key}",
+            "x-folder-id": yandex_folder,
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=45) as r:
+        resp = json.loads(r.read().decode("utf-8"))
+    text = resp["result"]["alternatives"][0]["message"]["text"]
+    return parse_json(text)
+
+
+def call_yandex(images: list, file_name: str, yandex_key: str, yandex_folder: str) -> dict:
+    """OCR всех страниц → объединяем текст → YandexGPT анализирует."""
+    all_texts = []
+    for idx, img in enumerate(images[:5]):
+        b64 = img.get("b64", "")
+        if not b64:
+            continue
+        try:
+            pb, _ = preprocess(b64)
+            text = yandex_ocr(pb, yandex_key, yandex_folder)
+            if text.strip():
+                all_texts.append(f"=== Страница {idx + 1} ===\n{text}")
+        except Exception as e:
+            all_texts.append(f"=== Страница {idx + 1} === [ошибка OCR: {e}]")
+
+    combined = "\n\n".join(all_texts) if all_texts else "[текст не извлечён]"
+    return yandex_gpt_analyze(combined, file_name, yandex_key, yandex_folder)
+
+
+# ── Gemini Flash Vision (запасной) ────────────────────────────────────────
 
 def call_gemini_vision(image_b64: str, mime: str, gemini_key: str) -> dict:
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
     payload = {
         "contents": [{"parts": [
             {"inline_data": {"mime_type": mime, "data": image_b64}},
-            {"text": ANALYSIS_PROMPT + "\n\nПроанализируй документ на фото. Верни JSON."}
+            {"text": ANALYSIS_PROMPT + "\n\nПроанализируй документ на фото. Верни JSON."},
         ]}],
         "generationConfig": {"temperature": 0.05, "maxOutputTokens": 800, "responseMimeType": "application/json"},
     }
@@ -106,10 +204,12 @@ def call_gemini_multi(images: list, file_name: str, gemini_key: str) -> dict:
     return parse_json(text)
 
 
+# ── DeepSeek fallback (только текст) ─────────────────────────────────────
+
 def call_deepseek_text(file_name: str, deepseek_key: str) -> dict:
     if not deepseek_key:
         return {"doc_type": "Документ", "category": "Прочее",
-                "comment": "Добавьте Gemini API Key в Настройки → Нейросеть для распознавания фото"}
+                "comment": "Нет ключей ИИ. Добавьте Яндекс ключ в Настройки → Нейросеть"}
     payload = {
         "model": "deepseek-chat",
         "messages": [
@@ -127,6 +227,8 @@ def call_deepseek_text(file_name: str, deepseek_key: str) -> dict:
         resp = json.loads(r.read().decode())
     return parse_json(resp["choices"][0]["message"]["content"])
 
+
+# ── Утилиты ───────────────────────────────────────────────────────────────
 
 def parse_json(text: str) -> dict:
     text = text.strip()
@@ -205,11 +307,13 @@ def preprocess(b64: str) -> tuple:
         img = img.filter(ImageFilter.SHARPEN)
         img = ImageEnhance.Contrast(img).enhance(1.2)
         buf = io.BytesIO()
-        img.save(buf, "JPEG", quality=88)
+        img.save(buf, "JPEG", quality=90)
         return base64.b64encode(buf.getvalue()).decode(), "image/jpeg"
     except Exception:
         return b64, "image/jpeg"
 
+
+# ── Handler ───────────────────────────────────────────────────────────────
 
 def handler(event: dict, context) -> dict:
     if event.get("httpMethod") == "OPTIONS":
@@ -219,7 +323,7 @@ def handler(event: dict, context) -> dict:
 
     conn = get_conn()
     try:
-        deepseek_key, gemini_key = get_keys(conn)
+        deepseek_key, gemini_key, yandex_key, yandex_folder = get_keys(conn)
         body = json.loads(event.get("body") or "{}")
         images_list = body.get("images", [])
         image_b64 = body.get("image_b64", "")
@@ -228,53 +332,43 @@ def handler(event: dict, context) -> dict:
         doc_id = body.get("doc_id")
         auto_create_tx = body.get("auto_create_tx", True)
 
-        if not gemini_key and not deepseek_key:
+        if not yandex_key and not gemini_key and not deepseek_key:
             return {"statusCode": 400, "headers": CORS,
-                    "body": json.dumps({"error": "Добавьте Gemini API Key в Настройки → Нейросеть (бесплатно на aistudio.google.com)"}, ensure_ascii=False)}
+                    "body": json.dumps({"error": "Яндекс API ключ не добавлен. Зайдите в Настройки и добавьте ключ."}, ensure_ascii=False)}
 
         fields = {}
         provider_used = "none"
+        error_details = []
 
-        # 1. Gemini Flash Vision — основной
-        if gemini_key:
+        # Подготавливаем список изображений
+        if images_list:
+            all_imgs = [{"b64": preprocess(i.get("b64", ""))[0], "mime": "image/jpeg"} for i in images_list[:5] if i.get("b64")]
+        elif image_b64:
+            pb, pm = preprocess(image_b64)
+            all_imgs = [{"b64": pb, "mime": pm}]
+        else:
+            all_imgs = []
+
+        # 1. Яндекс Vision + YandexGPT (основной)
+        if yandex_key and yandex_folder and all_imgs:
             try:
-                if images_list:
-                    proc = [{"b64": preprocess(i.get("b64", ""))[0], "mime": "image/jpeg"} for i in images_list[:5]]
-                    fields = call_gemini_multi(proc, file_name, gemini_key)
-                elif image_b64:
-                    pb, pm = preprocess(image_b64)
-                    fields = call_gemini_vision(pb, pm, gemini_key)
+                fields = call_yandex(all_imgs, file_name, yandex_key, yandex_folder)
+                provider_used = "yandex"
+            except Exception as e:
+                error_details.append(f"Yandex: {e}")
+
+        # 2. Gemini Flash (запасной с vision)
+        if not fields.get("doc_type") and gemini_key and all_imgs:
+            try:
+                if len(all_imgs) > 1:
+                    fields = call_gemini_multi(all_imgs, file_name, gemini_key)
+                else:
+                    fields = call_gemini_vision(all_imgs[0]["b64"], all_imgs[0]["mime"], gemini_key)
                 provider_used = "gemini"
             except Exception as e:
-                fields = {"_gemini_error": str(e)}
+                error_details.append(f"Gemini: {e}")
 
-        # 2. DeepSeek vision fallback
-        if not fields.get("doc_type") and deepseek_key and image_b64:
-            try:
-                pb, pm = preprocess(image_b64)
-                payload = {
-                    "model": "deepseek-chat",
-                    "messages": [
-                        {"role": "system", "content": ANALYSIS_PROMPT},
-                        {"role": "user", "content": [
-                            {"type": "image_url", "image_url": {"url": f"data:{pm};base64,{pb}", "detail": "high"}},
-                            {"type": "text", "text": "Верни JSON."},
-                        ]},
-                    ],
-                    "max_tokens": 700, "temperature": 0.05,
-                }
-                req = urllib.request.Request("https://api.deepseek.com/v1/chat/completions",
-                                              data=json.dumps(payload).encode(),
-                                              headers={"Content-Type": "application/json", "Authorization": f"Bearer {deepseek_key}"},
-                                              method="POST")
-                with urllib.request.urlopen(req, timeout=50) as r:
-                    resp = json.loads(r.read().decode())
-                fields = parse_json(resp["choices"][0]["message"]["content"])
-                provider_used = "deepseek-vision"
-            except Exception:
-                pass
-
-        # 3. Text-only fallback
+        # 3. DeepSeek text (последний fallback)
         if not fields.get("doc_type"):
             fields = call_deepseek_text(file_name, deepseek_key)
             provider_used = "deepseek-text"
@@ -301,7 +395,7 @@ def handler(event: dict, context) -> dict:
             desc = comment or f"{doc_type}: {counterparty or file_name}"
             cur.execute(f"""INSERT INTO {SCHEMA}.transactions
                     (date, description, category, amount, status, is_taxable, document_id)
-                VALUES (%s, %s, %s, %s, 'Выполнено', TRUE, %s) RETURNING id""",
+                VALUES (%s,%s,%s,%s,'Выполнено',TRUE,%s) RETURNING id""",
                         (tx_date, desc[:500], category, amount * sign, doc_id))
             row = cur.fetchone()
             if row:
