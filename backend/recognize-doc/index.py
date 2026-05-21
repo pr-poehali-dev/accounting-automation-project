@@ -194,19 +194,91 @@ AMOUNT_KEYWORDS = [
     r"сумма",
 ]
 
+# ── Парсер суммы прописью (русский) ─────────────────────────────────────
 
-def find_total_in_text(text: str) -> float | None:
-    """Эвристика: ищем итоговую сумму в OCR-тексте, если AI не справился."""
+WORD_UNITS = {
+    "ноль": 0, "один": 1, "одна": 1, "два": 2, "две": 2, "три": 3, "четыре": 4,
+    "пять": 5, "шесть": 6, "семь": 7, "восемь": 8, "девять": 9,
+    "десять": 10, "одиннадцать": 11, "двенадцать": 12, "тринадцать": 13,
+    "четырнадцать": 14, "пятнадцать": 15, "шестнадцать": 16,
+    "семнадцать": 17, "восемнадцать": 18, "девятнадцать": 19,
+}
+WORD_TENS = {
+    "двадцать": 20, "тридцать": 30, "сорок": 40, "пятьдесят": 50,
+    "шестьдесят": 60, "семьдесят": 70, "восемьдесят": 80, "девяносто": 90,
+}
+WORD_HUNDREDS = {
+    "сто": 100, "двести": 200, "триста": 300, "четыреста": 400,
+    "пятьсот": 500, "шестьсот": 600, "семьсот": 700, "восемьсот": 800, "девятьсот": 900,
+}
+WORD_THOUSAND = {"тысяча", "тысячи", "тысяч"}
+WORD_MILLION = {"миллион", "миллиона", "миллионов"}
+
+
+def parse_words_to_number(words: list) -> int:
+    """Парсит список русских слов-числительных в число. Возвращает 0 если не получилось."""
+    total = 0
+    current = 0
+    for w in words:
+        w = w.lower().strip(".,")
+        if w in WORD_UNITS:
+            current += WORD_UNITS[w]
+        elif w in WORD_TENS:
+            current += WORD_TENS[w]
+        elif w in WORD_HUNDREDS:
+            current += WORD_HUNDREDS[w]
+        elif w in WORD_THOUSAND:
+            total += (current or 1) * 1000
+            current = 0
+        elif w in WORD_MILLION:
+            total += (current or 1) * 1_000_000
+            current = 0
+    return total + current
+
+
+def find_amount_in_words(text: str) -> float | None:
+    """Ищет 'Тридцать восемь тысяч семьсот семьдесят шесть рублей 00 копеек' и расшифровывает в число."""
     if not text:
         return None
     text_low = text.lower()
-    # Универсальная регулярка числа: 28 132,00 / 28132.00 / 28 132 / 28132
+    # Берём всё от слов-числительных до 'рублей'/'руб'
+    # Расширенный паттерн: подряд идущие русские числительные + рубль
+    pattern = (
+        r"((?:двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто|"
+        r"сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|"
+        r"один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять|"
+        r"десять|одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|"
+        r"шестнадцать|семнадцать|восемнадцать|девятнадцать|тысяч[аи]?|миллион[аов]?"
+        r")(?:[\s\-]+(?:двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто|"
+        r"сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|"
+        r"один|одна|два|две|три|четыре|пять|шесть|семь|восемь|девять|"
+        r"десять|одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|"
+        r"шестнадцать|семнадцать|восемнадцать|девятнадцать|тысяч[аи]?|миллион[аов]?))+"
+        r"\s+рубл"
+    )
+    best = 0
+    for m in re.finditer(pattern, text_low):
+        phrase = m.group(0).replace("рубл", "").strip()
+        words = re.split(r"[\s\-]+", phrase)
+        val = parse_words_to_number(words)
+        if val > best:
+            best = val
+    # Парсим копейки если есть: "рублей 50 копеек" → 0.50
+    return float(best) if best > 0 else None
+
+
+def find_total_in_text(text: str) -> float | None:
+    """Эвристика: ищем итоговую сумму. Сначала по ключевому слову, потом сумма прописью,
+    потом — самое крупное число в нижней трети документа."""
+    if not text:
+        return None
+    text_low = text.lower()
+    # 1. Поиск по ключевым словам
     num_re = r"(\d{1,3}(?:[\s\u00a0]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)"
     candidates = []
     for priority, kw in enumerate(AMOUNT_KEYWORDS):
-        # Ищем число после ключевого слова в радиусе 80 символов
         for m in re.finditer(kw, text_low):
-            window = text[m.end(): m.end() + 120]
+            window = text[m.end(): m.end() + 200]
             num_match = re.search(num_re, window)
             if num_match:
                 raw = num_match.group(1)
@@ -217,11 +289,33 @@ def find_total_in_text(text: str) -> float | None:
                         candidates.append((priority, val))
                 except Exception:
                     pass
-    if not candidates:
-        return None
-    # Берём кандидата с наивысшим приоритетом, при равенстве — наибольшую сумму
-    candidates.sort(key=lambda x: (x[0], -x[1]))
-    return candidates[0][1]
+    if candidates:
+        candidates.sort(key=lambda x: (x[0], -x[1]))
+        return candidates[0][1]
+
+    # 2. Поиск суммы прописью
+    words_amount = find_amount_in_words(text)
+    if words_amount:
+        return words_amount
+
+    # 3. Fallback: самое крупное число в нижней трети текста (там обычно "Итого")
+    lines = text.split("\n")
+    if len(lines) > 3:
+        bottom_third = "\n".join(lines[int(len(lines) * 0.6):])
+        bottom_nums = []
+        for m in re.finditer(num_re, bottom_third):
+            raw = m.group(1)
+            cleaned = raw.replace("\u00a0", "").replace(" ", "").replace(",", ".")
+            try:
+                val = float(cleaned)
+                # Игнорируем номера телефонов, ИНН, банковские (>10 цифр в исходнике)
+                if val > 100 and len(raw.replace(" ", "").replace(",", "").replace(".", "")) <= 9:
+                    bottom_nums.append(val)
+            except Exception:
+                pass
+        if bottom_nums:
+            return max(bottom_nums)
+    return None
 
 
 # ── Gemini Flash Vision (запасной) ────────────────────────────────────────
@@ -536,8 +630,13 @@ def handler(event: dict, context) -> dict:
         amount = clean_amount(fields.get("amount"))
         # Если ИИ не нашёл сумму — пробуем сами вытащить её регуляркой из OCR-текста
         ocr_text = fields.get("_ocr_text", "")
+        ai_amount_raw = fields.get("amount")
+        print(f"[recognize-doc] provider={provider_used} ai_amount={ai_amount_raw} ocr_len={len(ocr_text)}")
+        if ocr_text:
+            print(f"[recognize-doc] OCR_TEXT:\n{ocr_text[:2000]}")
         if not amount and ocr_text:
             heuristic_amount = find_total_in_text(ocr_text)
+            print(f"[recognize-doc] heuristic_amount={heuristic_amount}")
             if heuristic_amount:
                 amount = heuristic_amount
                 provider_used = f"{provider_used}+regex"
