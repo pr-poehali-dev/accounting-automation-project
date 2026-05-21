@@ -42,6 +42,7 @@ export default function AdminSettings() {
   const [yandexKeyInput, setYandexKeyInput] = useState("");
   const [yandexFolderInput, setYandexFolderInput] = useState("");
   const [showYandexKey, setShowYandexKey] = useState(false);
+  const [editYandexKey, setEditYandexKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -137,7 +138,7 @@ export default function AdminSettings() {
       setSettings(res.settings);
       if (apiKeyInput.trim()) setApiKeyInput("");
       if (geminiKeyInput.trim()) setGeminiKeyInput("");
-      if (yandexKeyInput.trim()) setYandexKeyInput("");
+      if (yandexKeyInput.trim()) { setYandexKeyInput(""); setEditYandexKey(false); }
       if (yandexFolderInput.trim()) setYandexFolderInput("");
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -319,17 +320,50 @@ export default function AdminSettings() {
               )}
             </div>
             <div className="relative">
-              <input
-                type={showYandexKey ? "text" : "password"}
-                value={yandexKeyInput}
-                onChange={(e) => setYandexKeyInput(e.target.value)}
-                placeholder={settings.yandex_key_masked || "AQVN..."}
-                className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-red-500 pr-10"
-              />
-              <button type="button" onClick={() => setShowYandexKey(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <Icon name={showYandexKey ? "EyeOff" : "Eye"} size={15} />
-              </button>
+              {settings.yandex_key_set && !editYandexKey ? (
+                /* Показываем сохранённый ключ (маску) с рабочим глазом */
+                <div className="relative flex items-center w-full bg-secondary border border-border rounded px-4 py-2.5 pr-20">
+                  <span className="text-sm font-mono-fin text-foreground flex-1 truncate">
+                    {showYandexKey
+                      ? settings.yandex_key_masked
+                      : "AQVN" + "●".repeat(28) + settings.yandex_key_masked?.slice(-4)}
+                  </span>
+                  <div className="absolute right-2 flex items-center gap-1">
+                    <button type="button" onClick={() => setShowYandexKey(v => !v)}
+                      className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                      <Icon name={showYandexKey ? "EyeOff" : "Eye"} size={15} />
+                    </button>
+                    <button type="button" onClick={() => { setEditYandexKey(true); setShowYandexKey(false); }}
+                      className="p-1 text-muted-foreground hover:text-red-400 transition-colors" title="Заменить ключ">
+                      <Icon name="Pencil" size={13} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* Режим ввода нового ключа */
+                <>
+                  <input
+                    autoFocus={editYandexKey}
+                    type={showYandexKey ? "text" : "password"}
+                    value={yandexKeyInput}
+                    onChange={(e) => setYandexKeyInput(e.target.value)}
+                    placeholder="Вставьте новый API-ключ AQVN..."
+                    className="w-full bg-secondary border border-red-500/50 rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-red-500 pr-16"
+                  />
+                  <div className="absolute right-2 flex items-center gap-1">
+                    <button type="button" onClick={() => setShowYandexKey(v => !v)}
+                      className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                      <Icon name={showYandexKey ? "EyeOff" : "Eye"} size={15} />
+                    </button>
+                    {editYandexKey && (
+                      <button type="button" onClick={() => { setEditYandexKey(false); setYandexKeyInput(""); }}
+                        className="p-1 text-muted-foreground hover:text-foreground transition-colors" title="Отмена">
+                        <Icon name="X" size={13} />
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
             <div>
               <label className="text-xs text-muted-foreground block mb-1">
