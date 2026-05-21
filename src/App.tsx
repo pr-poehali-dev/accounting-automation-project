@@ -34,7 +34,7 @@ const App = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const content = {
-    dashboard: <Dashboard />,
+    dashboard: <Dashboard onNavigate={(s) => setSection(s as Section)} />,
     transactions: <Transactions />,
     documents: <Documents />,
     chat: <AiChat />,

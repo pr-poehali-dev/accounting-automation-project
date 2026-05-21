@@ -1,0 +1,27 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET settings",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"settings": {"selected_model": "string"}},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "PUT update model",
+      "method": "PUT",
+      "path": "/",
+      "body": {"selected_model": "deepseek-chat", "temperature": 0.3},
+      "expectedStatus": 200,
+      "expectedBody": {"settings": {"selected_model": "string"}},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

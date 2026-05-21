@@ -1,0 +1,49 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET summary (empty DB)",
+      "method": "GET",
+      "path": "/?action=summary",
+      "expectedStatus": 200,
+      "expectedBody": {"balance": 0},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET list (empty)",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"transactions": []},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST create transaction",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "date": "2026-05-21",
+        "description": "Тестовая операция",
+        "category": "Прочее",
+        "amount": 100000,
+        "status": "Выполнено"
+      },
+      "expectedStatus": 201,
+      "expectedBody": {"transaction": {"description": "string"}},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET list after create",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"total": 1},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

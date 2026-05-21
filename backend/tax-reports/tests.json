@@ -1,0 +1,26 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET reports list",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"reports": []},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET summary empty",
+      "method": "GET",
+      "path": "/?action=summary",
+      "expectedStatus": 200,
+      "expectedBody": {"income": 0},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

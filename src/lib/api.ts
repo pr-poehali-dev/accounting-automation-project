@@ -1,0 +1,175 @@
+const URLS = {
+  transactions: "https://functions.poehali.dev/3105b014-e11e-42e7-b435-176f087cf6e1",
+  documents: "https://functions.poehali.dev/ab114954-abef-4fbd-aa0f-6200ccdf9984",
+  taxReports: "https://functions.poehali.dev/d6031486-b133-49f5-ab9c-8dae0492a797",
+  aiSettings: "https://functions.poehali.dev/2d22aebf-09ca-46d6-98b1-a36a7556d511",
+  aiChat: "https://functions.poehali.dev/1700fcd4-35b3-4a49-8472-292f760d2f96",
+};
+
+async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data as T;
+}
+
+// ─── Transactions ───────────────────────────────────────────
+export interface Transaction {
+  id: number;
+  date: string;
+  description: string;
+  category: string;
+  amount: number;
+  status: string;
+  created_at?: string;
+}
+
+export interface DashboardSummary {
+  balance: number;
+  income_month: number;
+  expense_month: number;
+  income_year: number;
+  expense_year: number;
+  profit_month: number;
+  chart: { month: string; доход: number; расход: number }[];
+  categories: { name: string; сумма: number }[];
+}
+
+export const api = {
+  transactions: {
+    summary: () =>
+      request<DashboardSummary>(`${URLS.transactions}?action=summary`),
+
+    list: (params?: { search?: string; category?: string; date_from?: string; date_to?: string }) => {
+      const qs = new URLSearchParams();
+      if (params?.search) qs.set("search", params.search);
+      if (params?.category && params.category !== "Все") qs.set("category", params.category);
+      if (params?.date_from) qs.set("date_from", params.date_from);
+      if (params?.date_to) qs.set("date_to", params.date_to);
+      const q = qs.toString();
+      return request<{ transactions: Transaction[]; total: number }>(
+        `${URLS.transactions}${q ? "?" + q : ""}`
+      );
+    },
+
+    create: (data: Omit<Transaction, "id" | "created_at">) =>
+      request<{ transaction: Transaction }>(URLS.transactions, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+
+    update: (id: number, data: Partial<Transaction>) =>
+      request<{ transaction: Transaction }>(`${URLS.transactions}?id=${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+
+    delete: (id: number) =>
+      request<{ ok: boolean }>(`${URLS.transactions}?id=${id}`, { method: "DELETE" }),
+  },
+
+  // ─── Documents ──────────────────────────────────────────
+  documents: {
+    list: () =>
+      request<{ documents: DocRecord[] }>(URLS.documents),
+
+    create: (data: Partial<DocRecord>) =>
+      request<{ document: DocRecord }>(URLS.documents, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+
+    update: (id: number, data: Partial<DocRecord>) =>
+      request<{ document: DocRecord }>(`${URLS.documents}?id=${id}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+
+    delete: (id: number) =>
+      request<{ ok: boolean }>(`${URLS.documents}?id=${id}`, { method: "DELETE" }),
+  },
+
+  // ─── Tax Reports ────────────────────────────────────────
+  taxReports: {
+    list: () =>
+      request<{ reports: TaxReport[] }>(URLS.taxReports),
+
+    summary: (params?: { date_from?: string; date_to?: string }) => {
+      const qs = new URLSearchParams({ action: "summary" });
+      if (params?.date_from) qs.set("date_from", params.date_from);
+      if (params?.date_to) qs.set("date_to", params.date_to);
+      return request<{ income: number; expense: number; tax_base: number; vat: number }>(
+        `${URLS.taxReports}?${qs.toString()}`
+      );
+    },
+
+    create: (data: Partial<TaxReport>) =>
+      request<{ report: TaxReport }>(URLS.taxReports, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+
+    delete: (id: number) =>
+      request<{ ok: boolean }>(`${URLS.taxReports}?id=${id}`, { method: "DELETE" }),
+  },
+
+  // ─── AI Settings ────────────────────────────────────────
+  aiSettings: {
+    get: () =>
+      request<{ settings: AiSettings }>(URLS.aiSettings),
+
+    update: (data: Partial<AiSettings>) =>
+      request<{ settings: AiSettings }>(URLS.aiSettings, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+  },
+
+  // ─── AI Chat ────────────────────────────────────────────
+  chat: {
+    send: (messages: { role: string; content: string }[], model = "deepseek-chat") =>
+      request<{ reply: string; model: string }>(URLS.aiChat, {
+        method: "POST",
+        body: JSON.stringify({ messages, model }),
+      }),
+  },
+};
+
+// Types
+export interface DocRecord {
+  id: number;
+  name: string;
+  size_label: string | null;
+  file_key: string | null;
+  status: "processing" | "done" | "error";
+  rec_type: string | null;
+  rec_amount: string | null;
+  rec_date: string | null;
+  rec_counterparty: string | null;
+  rec_inn: string | null;
+  created_at: string;
+}
+
+export interface TaxReport {
+  id: number;
+  name: string;
+  period: string;
+  report_type: string;
+  status: string;
+  size_label: string | null;
+  created_at: string;
+}
+
+export interface AiSettings {
+  selected_model: string;
+  max_tokens: number;
+  temperature: number;
+  system_prompt: string;
+  updated_at?: string;
+}
+
+export const fmt = (n: number) =>
+  new Intl.NumberFormat("ru-RU", { style: "currency", currency: "RUB", maximumFractionDigits: 0 }).format(n);

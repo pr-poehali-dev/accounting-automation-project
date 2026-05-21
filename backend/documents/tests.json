@@ -1,0 +1,27 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET empty list",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"documents": []},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST create document",
+      "method": "POST",
+      "path": "/",
+      "body": {"name": "test.pdf", "size_label": "1.0 МБ", "status": "done"},
+      "expectedStatus": 201,
+      "expectedBody": {"document": {"name": "string"}},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
