@@ -171,11 +171,12 @@ export const api = {
   },
 
   // ─── PDF Report ─────────────────────────────────────────
-  pdfUrl: (params: { date_from?: string; date_to?: string; taxable_only?: boolean }) => {
+  pdfUrl: (params: { date_from?: string; date_to?: string; taxable_only?: boolean; vat_rate?: string }) => {
     const qs = new URLSearchParams();
     if (params.date_from) qs.set("date_from", params.date_from);
     if (params.date_to) qs.set("date_to", params.date_to);
     qs.set("taxable_only", params.taxable_only !== false ? "1" : "0");
+    if (params.vat_rate !== undefined) qs.set("vat_rate", params.vat_rate);
     return `${URLS.generatePdf}?${qs.toString()}`;
   },
 

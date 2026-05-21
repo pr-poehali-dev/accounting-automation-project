@@ -33,6 +33,13 @@ interface ReportWithDates extends TaxReport {
   date_to?: string;
 }
 
+const VAT_OPTIONS = [
+  { value: "0", label: "Без НДС" },
+  { value: "20", label: "НДС 20%" },
+  { value: "22", label: "НДС 22%" },
+  { value: "10", label: "НДС 10%" },
+];
+
 export default function TaxReports() {
   const [reports, setReports] = useState<ReportWithDates[]>([]);
   const [summary, setSummary] = useState({ income: 0, expense: 0, tax_base: 0, vat: 0 });
@@ -45,6 +52,7 @@ export default function TaxReports() {
   const [generating, setGenerating] = useState(false);
   const [generated, setGenerated] = useState<{ name: string; dateFrom: string; dateTo: string } | null>(null);
   const [downloading, setDownloading] = useState<number | null>(null);
+  const [vatRate, setVatRate] = useState("20");
 
   useEffect(() => {
     Promise.all([api.taxReports.list(), api.taxReports.summary()])
@@ -106,7 +114,7 @@ export default function TaxReports() {
 
   const handleDownloadPdf = (dateFrom: string, dateTo: string, name: string) => {
     const filename = `Otchet_IP_${name.replace(/\s+/g, "_")}.pdf`;
-    downloadFromUrl(api.pdfUrl({ date_from: dateFrom, date_to: dateTo, taxable_only: true }), filename);
+    downloadFromUrl(api.pdfUrl({ date_from: dateFrom, date_to: dateTo, taxable_only: true, vat_rate: vatRate }), filename);
   };
 
   const handleDelete = async (id: number) => {
@@ -115,11 +123,20 @@ export default function TaxReports() {
     setReports((prev) => prev.filter((r) => r.id !== id));
   };
 
+  const vatMultiplier = Number(vatRate) / 100;
+  const vatAmount = summary.tax_base * vatMultiplier;
+
   const summaryItems = [
     { label: "Доходы за период", value: fmt(summary.income), icon: "TrendingUp", color: "text-positive" },
     { label: "Расходы за период", value: fmt(summary.expense), icon: "TrendingDown", color: "text-negative" },
     { label: "Налогооблагаемая база", value: fmt(summary.tax_base), icon: "Calculator", color: "text-gold" },
-    { label: "НДС 20% (оценка)", value: fmt(summary.vat), icon: "Receipt", color: "text-foreground" },
+    {
+      label: `НДС ${vatRate === "0" ? "— Без НДС" : vatRate + "% (оценка)"}`,
+      value: vatRate === "0" ? "—" : fmt(vatAmount),
+      icon: "Receipt",
+      color: "text-foreground",
+      isVat: true,
+    },
   ];
 
   const fDate = (d: string) => { try { return new Date(d).toLocaleDateString("ru-RU"); } catch { return d; } };
@@ -133,13 +150,21 @@ export default function TaxReports() {
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         {summaryItems.map((item, i) => (
           <div key={i} className="card-fin p-4">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-2">
               <Icon name={item.icon} size={14} className={item.color} />
-              <span className="text-xs text-muted-foreground leading-tight">{item.label}</span>
+              <span className="text-xs text-muted-foreground leading-tight flex-1">{item.label}</span>
             </div>
             {loading
               ? <div className="h-6 bg-secondary/60 rounded animate-pulse w-2/3" />
               : <div className={`font-mono-fin text-base sm:text-lg font-semibold ${item.color}`}>{item.value}</div>}
+            {"isVat" in item && item.isVat && (
+              <div className="mt-2">
+                <select value={vatRate} onChange={(e) => setVatRate(e.target.value)}
+                  className="w-full text-xs bg-secondary border border-border rounded px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-gold">
+                  {VAT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
           </div>
         ))}
       </div>
