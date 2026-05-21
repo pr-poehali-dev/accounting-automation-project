@@ -187,12 +187,12 @@ export default function AdminSettings() {
   const currentModel = models.find((m) => m.id === settings.selected_model);
 
   return (
-    <div className="animate-fade-in w-full max-w-3xl space-y-4">
+    <div className="animate-fade-in w-full max-w-3xl space-y-3 sm:space-y-4">
 
       {/* Model selection */}
-      <div className="card-fin p-4 sm:p-5">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground mb-4 gold-line pl-3">Выбор модели ИИ</div>
-        <div className="space-y-4">
+      <div className="card-fin p-3 sm:p-5">
+        <div className="text-[11px] sm:text-xs uppercase tracking-wider sm:tracking-widest text-muted-foreground mb-3 sm:mb-4 gold-line pl-3">Выбор модели ИИ</div>
+        <div className="space-y-3 sm:space-y-4">
           {providerGroups.map((group) => (
             <div key={group.name}>
               <div className={`text-xs font-medium mb-2 ${group.color}`}>{group.name}</div>
@@ -202,16 +202,16 @@ export default function AdminSettings() {
                   return (
                     <button key={id} onClick={() => setSettings((s) => ({ ...s, selected_model: id }))}
                       className={`p-3 rounded-lg border text-left transition-all ${settings.selected_model === id ? "border-gold bg-gold/5" : "border-border hover:border-gold/30"}`}>
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-sm font-medium flex items-center gap-2">
-                          {m.name}
+                      <div className="flex items-start justify-between gap-2 mb-0.5">
+                        <span className="text-sm font-medium flex items-center gap-1.5 flex-wrap min-w-0">
+                          <span className="truncate">{m.name}</span>
                           {m.recommended && (
-                            <span className="text-xs bg-gold/20 text-gold px-1.5 py-0.5 rounded font-mono-fin">Рекомендуем</span>
+                            <span className="text-[10px] sm:text-xs bg-gold/20 text-gold px-1.5 py-0.5 rounded font-mono-fin whitespace-nowrap">Рекомендуем</span>
                           )}
                         </span>
-                        {settings.selected_model === id && <Icon name="CheckCircle" size={14} className="text-gold flex-shrink-0" />}
+                        {settings.selected_model === id && <Icon name="CheckCircle" size={14} className="text-gold flex-shrink-0 mt-0.5" />}
                       </div>
-                      <div className="text-xs text-muted-foreground">{m.desc}</div>
+                      <div className="text-xs text-muted-foreground line-clamp-2">{m.desc}</div>
                     </button>
                   );
                 })}
@@ -222,34 +222,34 @@ export default function AdminSettings() {
       </div>
 
       {/* API Key + Test */}
-      <div className="card-fin p-4 sm:p-5">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground mb-4 gold-line pl-3">Подключение к API</div>
+      <div className="card-fin p-3 sm:p-5">
+        <div className="text-[11px] sm:text-xs uppercase tracking-wider sm:tracking-widest text-muted-foreground mb-3 sm:mb-4 gold-line pl-3">Подключение к API</div>
         <div className="space-y-3">
 
           {/* API Key field */}
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs text-muted-foreground">
+            <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
+              <label className="text-xs text-muted-foreground min-w-0">
                 API Ключ
-                {currentModel && <span className="ml-2 text-muted-foreground/60">для {currentModel.provider}</span>}
+                {currentModel && <span className="ml-2 text-muted-foreground/60 hidden sm:inline">для {currentModel.provider}</span>}
               </label>
               {settings.api_key_set && !editKey && (
-                <span className="flex items-center gap-1 text-xs text-positive">
+                <span className="flex items-center gap-1 text-xs text-positive flex-shrink-0">
                   <Icon name="CheckCircle" size={11} /> Ключ сохранён
                 </span>
               )}
             </div>
             <div className="relative">
               {settings.api_key_set && !editKey ? (
-                <div className="relative flex items-center w-full bg-secondary border border-border rounded px-4 py-2.5 pr-20">
-                  <span className="text-sm font-mono-fin text-foreground flex-1 truncate">
-                    {showKey ? settings.api_key_masked : "sk-" + "●".repeat(28) + settings.api_key_masked?.slice(-4)}
+                <div className="relative flex items-center w-full bg-secondary border border-border rounded px-3 sm:px-4 py-2.5 pr-16 sm:pr-20">
+                  <span className="text-xs sm:text-sm font-mono-fin text-foreground flex-1 truncate">
+                    {showKey ? settings.api_key_masked : "sk-" + "●".repeat(16) + settings.api_key_masked?.slice(-4)}
                   </span>
-                  <div className="absolute right-2 flex items-center gap-1">
-                    <button type="button" onClick={() => setShowKey(v => !v)} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                  <div className="absolute right-1.5 flex items-center gap-0.5">
+                    <button type="button" onClick={() => setShowKey(v => !v)} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
                       <Icon name={showKey ? "EyeOff" : "Eye"} size={15} />
                     </button>
-                    <button type="button" onClick={() => { setEditKey(true); setShowKey(false); }} className="p-1 text-muted-foreground hover:text-gold transition-colors" title="Заменить ключ">
+                    <button type="button" onClick={() => { setEditKey(true); setShowKey(false); }} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-gold transition-colors" title="Заменить ключ">
                       <Icon name="Pencil" size={13} />
                     </button>
                   </div>
@@ -262,15 +262,15 @@ export default function AdminSettings() {
                     value={apiKeyInput}
                     onChange={(e) => setApiKeyInput(e.target.value)}
                     placeholder="Вставьте API-ключ..."
-                    className="w-full bg-secondary border border-gold/50 rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-gold pr-16"
+                    className="w-full bg-secondary border border-gold/50 rounded px-3 sm:px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-gold pr-16"
                   />
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                    <button type="button" onClick={() => setShowKey(v => !v)} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                    <button type="button" onClick={() => setShowKey(v => !v)} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
                       <Icon name={showKey ? "EyeOff" : "Eye"} size={15} />
                     </button>
                     {editKey && (
-                      <button type="button" onClick={() => { setEditKey(false); setApiKeyInput(""); }} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
-                        <Icon name="X" size={13} />
+                      <button type="button" onClick={() => { setEditKey(false); setApiKeyInput(""); }} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                        <Icon name="X" size={14} />
                       </button>
                     )}
                   </div>
@@ -293,28 +293,28 @@ export default function AdminSettings() {
           </div>
 
           {/* Gemini API Key — для распознавания фото */}
-          <div className="rounded-lg border border-blue-900/30 bg-blue-900/10 p-3.5 space-y-2.5">
-            <div className="flex items-center gap-2">
-              <Icon name="ScanLine" size={15} className="text-blue-400 flex-shrink-0" />
-              <div>
+          <div className="rounded-lg border border-blue-900/30 bg-blue-900/10 p-3 sm:p-3.5 space-y-2.5">
+            <div className="flex items-start gap-2 flex-wrap">
+              <Icon name="ScanLine" size={15} className="text-blue-400 flex-shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-blue-300">Google Gemini — распознавание фото</div>
-                <div className="text-xs text-muted-foreground">Бесплатно. Нужен для чтения накладных и чеков</div>
+                <div className="text-xs text-muted-foreground">Бесплатно. Для чтения накладных и чеков</div>
               </div>
               {settings.gemini_key_set && (
-                <span className="ml-auto flex items-center gap-1 text-xs text-positive whitespace-nowrap"><Icon name="CheckCircle" size={11} />Ключ есть</span>
+                <span className="flex items-center gap-1 text-xs text-positive whitespace-nowrap flex-shrink-0"><Icon name="CheckCircle" size={11} />Ключ есть</span>
               )}
             </div>
             <div className="relative">
               {settings.gemini_key_set && !editGeminiKey ? (
-                <div className="relative flex items-center w-full bg-secondary border border-border rounded px-4 py-2.5 pr-20">
-                  <span className="text-sm font-mono-fin text-foreground flex-1 truncate">
-                    {showGeminiKey ? settings.gemini_key_masked : "AIza" + "●".repeat(28) + settings.gemini_key_masked?.slice(-4)}
+                <div className="relative flex items-center w-full bg-secondary border border-border rounded px-3 sm:px-4 py-2.5 pr-16 sm:pr-20">
+                  <span className="text-xs sm:text-sm font-mono-fin text-foreground flex-1 truncate">
+                    {showGeminiKey ? settings.gemini_key_masked : "AIza" + "●".repeat(16) + settings.gemini_key_masked?.slice(-4)}
                   </span>
-                  <div className="absolute right-2 flex items-center gap-1">
-                    <button type="button" onClick={() => setShowGeminiKey(v => !v)} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                  <div className="absolute right-1.5 flex items-center gap-0.5">
+                    <button type="button" onClick={() => setShowGeminiKey(v => !v)} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
                       <Icon name={showGeminiKey ? "EyeOff" : "Eye"} size={15} />
                     </button>
-                    <button type="button" onClick={() => { setEditGeminiKey(true); setShowGeminiKey(false); }} className="p-1 text-muted-foreground hover:text-blue-400 transition-colors" title="Заменить ключ">
+                    <button type="button" onClick={() => { setEditGeminiKey(true); setShowGeminiKey(false); }} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-blue-400 transition-colors" title="Заменить ключ">
                       <Icon name="Pencil" size={13} />
                     </button>
                   </div>
@@ -327,15 +327,15 @@ export default function AdminSettings() {
                     value={geminiKeyInput}
                     onChange={(e) => setGeminiKeyInput(e.target.value)}
                     placeholder="Вставьте ключ AIzaSy..."
-                    className="w-full bg-secondary border border-blue-500/50 rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-blue-500 pr-16"
+                    className="w-full bg-secondary border border-blue-500/50 rounded px-3 sm:px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-blue-500 pr-16"
                   />
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                    <button type="button" onClick={() => setShowGeminiKey(v => !v)} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                    <button type="button" onClick={() => setShowGeminiKey(v => !v)} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
                       <Icon name={showGeminiKey ? "EyeOff" : "Eye"} size={15} />
                     </button>
                     {editGeminiKey && (
-                      <button type="button" onClick={() => { setEditGeminiKey(false); setGeminiKeyInput(""); }} className="p-1 text-muted-foreground hover:text-foreground transition-colors">
-                        <Icon name="X" size={13} />
+                      <button type="button" onClick={() => { setEditGeminiKey(false); setGeminiKeyInput(""); }} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                        <Icon name="X" size={14} />
                       </button>
                     )}
                   </div>
@@ -349,57 +349,55 @@ export default function AdminSettings() {
           </div>
 
           {/* Yandex Vision — распознавание фото (приоритетный) */}
-          <div className="rounded-lg border border-red-900/30 bg-red-900/10 p-3.5 space-y-2.5">
-            <div className="flex items-center gap-2">
-              <Icon name="ScanEye" size={15} className="text-red-400 flex-shrink-0" />
-              <div>
+          <div className="rounded-lg border border-red-900/30 bg-red-900/10 p-3 sm:p-3.5 space-y-2.5">
+            <div className="flex items-start gap-2 flex-wrap">
+              <Icon name="ScanEye" size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-red-300">Яндекс Vision — распознавание документов</div>
                 <div className="text-xs text-muted-foreground">Приоритетный провайдер. Отлично читает русский текст</div>
               </div>
               {settings.yandex_key_set && (
-                <span className="ml-auto flex items-center gap-1 text-xs text-positive whitespace-nowrap"><Icon name="CheckCircle" size={11} />Ключ есть</span>
+                <span className="flex items-center gap-1 text-xs text-positive whitespace-nowrap flex-shrink-0"><Icon name="CheckCircle" size={11} />Ключ есть</span>
               )}
             </div>
             <div className="relative">
               {settings.yandex_key_set && !editYandexKey ? (
-                /* Показываем сохранённый ключ (маску) с рабочим глазом */
-                <div className="relative flex items-center w-full bg-secondary border border-border rounded px-4 py-2.5 pr-20">
-                  <span className="text-sm font-mono-fin text-foreground flex-1 truncate">
+                <div className="relative flex items-center w-full bg-secondary border border-border rounded px-3 sm:px-4 py-2.5 pr-16 sm:pr-20">
+                  <span className="text-xs sm:text-sm font-mono-fin text-foreground flex-1 truncate">
                     {showYandexKey
                       ? settings.yandex_key_masked
-                      : "AQVN" + "●".repeat(28) + settings.yandex_key_masked?.slice(-4)}
+                      : "AQVN" + "●".repeat(16) + settings.yandex_key_masked?.slice(-4)}
                   </span>
-                  <div className="absolute right-2 flex items-center gap-1">
+                  <div className="absolute right-1.5 flex items-center gap-0.5">
                     <button type="button" onClick={() => setShowYandexKey(v => !v)}
-                      className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                      className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
                       <Icon name={showYandexKey ? "EyeOff" : "Eye"} size={15} />
                     </button>
                     <button type="button" onClick={() => { setEditYandexKey(true); setShowYandexKey(false); }}
-                      className="p-1 text-muted-foreground hover:text-red-400 transition-colors" title="Заменить ключ">
+                      className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-red-400 transition-colors" title="Заменить ключ">
                       <Icon name="Pencil" size={13} />
                     </button>
                   </div>
                 </div>
               ) : (
-                /* Режим ввода нового ключа */
                 <>
                   <input
                     autoFocus={editYandexKey}
                     type={showYandexKey ? "text" : "password"}
                     value={yandexKeyInput}
                     onChange={(e) => setYandexKeyInput(e.target.value)}
-                    placeholder="Вставьте новый API-ключ AQVN..."
-                    className="w-full bg-secondary border border-red-500/50 rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-red-500 pr-16"
+                    placeholder="API-ключ AQVN..."
+                    className="w-full bg-secondary border border-red-500/50 rounded px-3 sm:px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-red-500 pr-16"
                   />
-                  <div className="absolute right-2 flex items-center gap-1">
+                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
                     <button type="button" onClick={() => setShowYandexKey(v => !v)}
-                      className="p-1 text-muted-foreground hover:text-foreground transition-colors">
+                      className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
                       <Icon name={showYandexKey ? "EyeOff" : "Eye"} size={15} />
                     </button>
                     {editYandexKey && (
                       <button type="button" onClick={() => { setEditYandexKey(false); setYandexKeyInput(""); }}
-                        className="p-1 text-muted-foreground hover:text-foreground transition-colors" title="Отмена">
-                        <Icon name="X" size={13} />
+                        className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors" title="Отмена">
+                        <Icon name="X" size={14} />
                       </button>
                     )}
                   </div>
@@ -418,7 +416,7 @@ export default function AdminSettings() {
                 value={yandexFolderInput}
                 onChange={(e) => setYandexFolderInput(e.target.value)}
                 placeholder={settings.yandex_folder_masked || "b1g..."}
-                className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-red-500"
+                className="w-full bg-secondary border border-border rounded px-3 sm:px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-red-500"
               />
             </div>
             <a href="https://console.yandex.cloud" target="_blank" rel="noopener noreferrer"

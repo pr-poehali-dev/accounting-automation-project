@@ -121,42 +121,43 @@ export default function Transactions() {
   return (
     <div className="animate-fade-in space-y-3">
       {/* Filters */}
-      <div className="card-fin p-3 sm:p-4 space-y-3">
+      <div className="card-fin p-3 sm:p-4 space-y-2.5 sm:space-y-3">
         <div className="flex gap-2">
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск..."
-              className="w-full bg-secondary border border-border rounded px-3 py-2 pl-8 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
+              className="w-full bg-secondary border border-border rounded px-3 py-2.5 pl-8 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
           </div>
           <button
             onClick={() => {
               const url = api.exportUrl({ type: "transactions", date_from: dateFrom, date_to: dateTo, category: cat !== "Все" ? cat : undefined });
               const a = document.createElement("a"); a.href = url; a.download = "операции.csv"; a.click();
             }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded border border-border text-sm text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors whitespace-nowrap">
-            <Icon name="Download" size={14} />
+            title="Скачать CSV"
+            className="flex items-center gap-1.5 px-3 py-2.5 rounded border border-border text-sm text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors whitespace-nowrap flex-shrink-0">
+            <Icon name="Download" size={15} />
             <span className="hidden sm:inline">CSV</span>
           </button>
           <button onClick={openCreate}
-            className="flex items-center gap-1.5 px-3 py-2 rounded bg-gold text-primary-foreground text-sm font-medium hover:bg-yellow-500 transition-colors whitespace-nowrap">
-            <Icon name="Plus" size={15} />
+            className="flex items-center gap-1.5 px-3 py-2.5 rounded bg-gold text-primary-foreground text-sm font-medium hover:bg-yellow-500 transition-colors whitespace-nowrap flex-shrink-0">
+            <Icon name="Plus" size={16} />
             <span className="hidden sm:inline">Добавить</span>
           </button>
         </div>
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-            className="flex-1 bg-secondary border border-border rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
+            className="w-full bg-secondary border border-border rounded px-2.5 sm:px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-            className="flex-1 bg-secondary border border-border rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
+            className="w-full bg-secondary border border-border rounded px-2.5 sm:px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
         </div>
       </div>
 
       {/* Category filter */}
       <div className="card-fin overflow-hidden">
-        <div className="flex gap-1 p-2.5 border-b border-border overflow-x-auto scrollbar-none">
+        <div className="flex gap-1 p-2 sm:p-2.5 border-b border-border overflow-x-auto scrollbar-none -mx-px">
           {CATEGORIES.map((c) => (
             <button key={c} onClick={() => setCat(c)}
-              className={`px-2.5 py-1 rounded text-xs whitespace-nowrap transition-colors ${cat === c ? "bg-gold text-primary-foreground font-medium" : "text-muted-foreground hover:text-foreground hover:bg-secondary"}`}>
+              className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors flex-shrink-0 ${cat === c ? "bg-gold text-primary-foreground font-medium" : "text-muted-foreground hover:text-foreground hover:bg-secondary"}`}>
               {c}
             </button>
           ))}
@@ -222,17 +223,17 @@ export default function Transactions() {
             </div>
           ))}
           {!loading && txs.map((tx) => (
-            <div key={tx.id} onClick={() => openEdit(tx)} className="px-4 py-3 hover-row cursor-pointer">
-              <div className="flex items-start justify-between gap-2 mb-1">
-                <div className="text-sm leading-snug flex-1">{tx.description}</div>
-                <div className={`font-mono-fin text-sm font-semibold whitespace-nowrap ${tx.amount > 0 ? "text-positive" : "text-negative"}`}>
+            <div key={tx.id} onClick={() => openEdit(tx)} className="px-3 py-3 hover-row cursor-pointer active:bg-secondary/40">
+              <div className="flex items-start justify-between gap-2 mb-1.5">
+                <div className="text-sm leading-snug flex-1 min-w-0 break-words">{tx.description}</div>
+                <div className={`font-mono-fin text-sm font-semibold whitespace-nowrap flex-shrink-0 ${tx.amount > 0 ? "text-positive" : "text-negative"}`}>
                   {tx.amount > 0 ? "+" : ""}{fmt(tx.amount)}
                 </div>
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-muted-foreground font-mono-fin">{fDate(tx.date)}</span>
-                <span className="text-xs px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">{tx.category}</span>
-                <span className={`text-xs px-1.5 py-0.5 rounded-full ${tx.status === "Выполнено" ? "bg-green-900/30 text-positive" : "bg-yellow-900/30 text-yellow-400"}`}>{tx.status}</span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] text-muted-foreground font-mono-fin">{fDate(tx.date)}</span>
+                <span className="text-[11px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">{tx.category}</span>
+                <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${tx.status === "Выполнено" ? "bg-green-900/30 text-positive" : "bg-yellow-900/30 text-yellow-400"}`}>{tx.status}</span>
               </div>
             </div>
           ))}
@@ -249,7 +250,7 @@ export default function Transactions() {
       {/* Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setShowForm(false)}>
-          <div className="w-full sm:max-w-lg card-fin rounded-t-2xl sm:rounded-xl p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full sm:max-w-lg card-fin rounded-t-2xl sm:rounded-xl p-4 sm:p-5 space-y-4 max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold">{editTx ? "Редактировать операцию" : "Новая операция"}</h2>
               <button onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground"><Icon name="X" size={18} /></button>

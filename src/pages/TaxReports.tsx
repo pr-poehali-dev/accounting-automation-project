@@ -147,16 +147,16 @@ export default function TaxReports() {
   return (
     <div className="animate-fade-in space-y-4">
       {/* Summary */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-4">
         {summaryItems.map((item, i) => (
-          <div key={i} className="card-fin p-4">
+          <div key={i} className="card-fin p-3 sm:p-4">
             <div className="flex items-center gap-2 mb-2">
               <Icon name={item.icon} size={14} className={item.color} />
-              <span className="text-xs text-muted-foreground leading-tight flex-1">{item.label}</span>
+              <span className="text-[11px] sm:text-xs text-muted-foreground leading-tight flex-1 line-clamp-2">{item.label}</span>
             </div>
             {loading
               ? <div className="h-6 bg-secondary/60 rounded animate-pulse w-2/3" />
-              : <div className={`font-mono-fin text-base sm:text-lg font-semibold ${item.color}`}>{item.value}</div>}
+              : <div className={`font-mono-fin text-sm sm:text-lg font-semibold break-all ${item.color}`}>{item.value}</div>}
             {"isVat" in item && item.isVat && (
               <div className="mt-2">
                 <select value={vatRate} onChange={(e) => setVatRate(e.target.value)}
@@ -169,10 +169,10 @@ export default function TaxReports() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4">
         {/* Generate form */}
-        <div className="lg:col-span-2 card-fin p-4 sm:p-5">
-          <div className="text-xs uppercase tracking-widest text-muted-foreground mb-4 gold-line pl-3">Сформировать отчёт</div>
+        <div className="lg:col-span-2 card-fin p-3 sm:p-5">
+          <div className="text-[11px] sm:text-xs uppercase tracking-wider sm:tracking-widest text-muted-foreground mb-3 sm:mb-4 gold-line pl-3">Сформировать отчёт</div>
 
           <div className="flex gap-1 mb-4 p-1 bg-secondary rounded-lg">
             {(["quarter", "year", "custom"] as const).map((t) => (
@@ -256,8 +256,8 @@ export default function TaxReports() {
 
         {/* Archive */}
         <div className="lg:col-span-3 card-fin overflow-hidden">
-          <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-            <span className="text-xs uppercase tracking-widest text-muted-foreground">Архив отчётов</span>
+          <div className="px-4 sm:px-5 py-3 sm:py-4 border-b border-border flex items-center justify-between">
+            <span className="text-[11px] sm:text-xs uppercase tracking-wider sm:tracking-widest text-muted-foreground">Архив отчётов</span>
             <span className="text-xs text-muted-foreground font-mono-fin">{reports.length} шт.</span>
           </div>
           {loading ? (
@@ -281,25 +281,36 @@ export default function TaxReports() {
                 const df = r.date_from || dates.from;
                 const dt = r.date_to || dates.to;
                 return (
-                  <div key={r.id} className="px-4 sm:px-5 py-4 hover-row">
-                    <div className="flex items-start gap-3">
+                  <div key={r.id} className="px-3 sm:px-5 py-3 sm:py-4 hover-row">
+                    <div className="flex items-start gap-2.5 sm:gap-3">
                       <div className="w-9 h-9 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
                         <Icon name="FileText" size={16} className="text-gold" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">{r.name}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{r.period} • {fDate(r.created_at)}</div>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium truncate">{r.name}</div>
+                            <div className="text-[11px] sm:text-xs text-muted-foreground mt-0.5">{r.period} • {fDate(r.created_at)}</div>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <span className="text-[10px] sm:text-xs text-positive bg-green-900/20 px-2 py-0.5 rounded-full whitespace-nowrap">{r.status}</span>
+                            <button onClick={() => handleDelete(r.id)}
+                              className="w-8 h-8 rounded flex items-center justify-center text-muted-foreground hover:text-negative hover:bg-red-900/20 transition-colors">
+                              <Icon name="Trash2" size={14} />
+                            </button>
+                          </div>
+                        </div>
                         {/* Download buttons */}
-                        <div className="flex gap-1.5 mt-2 flex-wrap">
+                        <div className="flex gap-1.5 mt-2.5 flex-wrap">
                           <button
                             onClick={() => handleDownloadPdf(df, dt, r.name)}
-                            className="flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gold/40 text-gold hover:bg-gold/10 transition-colors font-medium">
+                            className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded border border-gold/40 text-gold hover:bg-gold/10 transition-colors font-medium">
                             <Icon name="FileDown" size={12} /> PDF
                           </button>
                           <button
                             onClick={() => handleDownload(r, "tax")}
                             disabled={downloading === r.id}
-                            className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors disabled:opacity-50">
+                            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors disabled:opacity-50">
                             {downloading === r.id
                               ? <div className="w-3 h-3 rounded-full border border-muted-foreground border-t-transparent animate-spin" />
                               : <Icon name="Download" size={12} />}
@@ -308,18 +319,10 @@ export default function TaxReports() {
                           <button
                             onClick={() => handleDownload(r, "transactions")}
                             disabled={downloading === r.id}
-                            className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors disabled:opacity-50">
+                            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors disabled:opacity-50">
                             <Icon name="Download" size={12} /> Операции
                           </button>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className="hidden sm:block text-xs px-2 py-0.5 rounded bg-secondary text-muted-foreground">{r.report_type}</span>
-                        <span className="text-xs text-positive bg-green-900/20 px-2 py-0.5 rounded-full whitespace-nowrap">{r.status}</span>
-                        <button onClick={() => handleDelete(r.id)}
-                          className="w-7 h-7 rounded flex items-center justify-center text-muted-foreground hover:text-negative hover:bg-red-900/20 transition-colors">
-                          <Icon name="Trash2" size={13} />
-                        </button>
                       </div>
                     </div>
                   </div>

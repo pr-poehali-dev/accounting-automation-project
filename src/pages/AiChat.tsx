@@ -152,26 +152,26 @@ export default function AiChat() {
   }, [recording, speechSupported]);
 
   return (
-    <div className="animate-fade-in card-fin flex flex-col" style={{ height: "calc(100dvh - 112px)", minHeight: "400px" }}>
+    <div className="animate-fade-in card-fin flex flex-col h-[calc(100dvh-9rem)] lg:h-[calc(100dvh-7rem)] min-h-[400px]">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gold/20 flex items-center justify-center">
+      <div className="px-3 sm:px-4 py-2.5 sm:py-3 border-b border-border flex items-center justify-between gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="w-8 h-8 rounded-full bg-gold/20 flex items-center justify-center flex-shrink-0">
             <Icon name="Sparkles" size={16} className="text-gold" />
           </div>
-          <div>
-            <div className="text-sm font-medium">ФинансПро ИИ</div>
+          <div className="min-w-0">
+            <div className="text-sm font-medium truncate">ФинансПро ИИ</div>
             <div className="text-xs text-positive flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-positive inline-block" />
               DeepSeek
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
           <select
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            className="text-xs bg-secondary border border-border rounded px-2 py-1 text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold"
+            className="text-xs bg-secondary border border-border rounded px-2 py-1.5 text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold max-w-[110px] sm:max-w-none"
           >
             <option value="deepseek-chat">DeepSeek V3</option>
             <option value="deepseek-reasoner">DeepSeek R1</option>
@@ -179,9 +179,9 @@ export default function AiChat() {
           <button
             onClick={handleReset}
             title="Новый диалог"
-            className="w-7 h-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            className="w-9 h-9 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex-shrink-0"
           >
-            <Icon name="RotateCcw" size={14} />
+            <Icon name="RotateCcw" size={15} />
           </button>
         </div>
       </div>
@@ -195,7 +195,7 @@ export default function AiChat() {
                 ? <Icon name="Sparkles" size={13} className="text-gold" />
                 : <Icon name="User" size={13} className="text-muted-foreground" />}
             </div>
-            <div className={`max-w-[85%] sm:max-w-[75%] flex flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}>
+            <div className={`max-w-[calc(100%-3rem)] sm:max-w-[75%] flex flex-col gap-1 ${msg.role === "user" ? "items-end" : "items-start"}`}>
               <div
                 className={`px-3 py-2.5 sm:px-4 sm:py-3 rounded-xl text-sm leading-relaxed break-words ${
                   msg.error
@@ -249,35 +249,35 @@ export default function AiChat() {
         </div>
 
         {/* Поле ввода */}
-        <div className="flex gap-2 items-center px-3 py-2.5">
+        <div className="flex gap-2 items-center px-2.5 sm:px-3 py-2.5">
           <input
             ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKey}
-            placeholder="Введите сообщение..."
-            className="flex-1 bg-secondary border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold"
+            placeholder="Сообщение..."
+            className="flex-1 min-w-0 bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold"
           />
           {speechSupported && (
             <button
               onClick={toggleRecording}
               title={recording ? "Остановить запись" : "Голосовой ввод"}
-              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
+              className={`w-11 h-11 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
                 recording
                   ? "bg-red-500 text-white animate-pulse"
                   : "bg-secondary border border-border text-muted-foreground hover:text-foreground hover:border-gold/40"
               }`}
             >
-              <Icon name={recording ? "MicOff" : "Mic"} size={16} />
+              <Icon name={recording ? "MicOff" : "Mic"} size={17} />
             </button>
           )}
           <button
             onClick={() => send(input)}
             disabled={!input.trim() || loading}
-            className="w-9 h-9 rounded-lg bg-gold flex items-center justify-center text-primary-foreground hover:bg-yellow-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+            className="w-11 h-11 sm:w-10 sm:h-10 rounded-lg bg-gold flex items-center justify-center text-primary-foreground hover:bg-yellow-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
           >
-            <Icon name="Send" size={15} />
+            <Icon name="Send" size={17} />
           </button>
         </div>
       </div>

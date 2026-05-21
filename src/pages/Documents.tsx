@@ -211,6 +211,46 @@ export default function Documents() {
 
   const handleSelect = (doc: DocWithRecognition) => { setSelected(doc); setMobileView("detail"); };
 
+  const recognizeAgain = async () => {
+    if (!selected) return;
+    if (!selected.previewUrl) {
+      alert("Нет сохранённого изображения для повторного распознавания. Загрузите файл заново.");
+      return;
+    }
+    setDocs((prev) => prev.map((d) => d.id === selected.id ? { ...d, recognizing: true, status: "processing" } : d));
+    setSelected((prev) => prev ? { ...prev, recognizing: true, status: "processing" } : prev);
+    try {
+      // previewUrl уже data:image/jpeg;base64,...
+      const b64 = selected.previewUrl.split(",")[1];
+      const result = await api.recognizeDoc({
+        image_b64: b64,
+        mime_type: "image/jpeg",
+        file_name: selected.name || "document.jpg",
+        doc_id: selected.id,
+        auto_create_tx: true,
+      });
+      if (!result.error) {
+        await api.documents.update(selected.id, {
+          status: "done",
+          rec_type: result.doc_type,
+          rec_amount: result.amount_str || (result.amount ? `₽ ${result.amount}` : undefined),
+          rec_date: result.date || undefined,
+          rec_counterparty: result.counterparty || undefined,
+          rec_inn: result.inn || undefined,
+        });
+      }
+      const updated = await api.documents.list();
+      const updatedDoc = updated.documents.find((d) => d.id === selected.id);
+      const finalDoc = { ...(updatedDoc || {}), recognizing: false, recognition: result, previewUrl: selected.previewUrl };
+      setDocs((prev) => prev.map((d) => d.id === selected.id ? { ...d, ...finalDoc } : d));
+      setSelected((prev) => prev ? { ...prev, ...finalDoc } : prev);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Ошибка распознавания";
+      setDocs((prev) => prev.map((d) => d.id === selected.id ? { ...d, status: "error", recognizing: false, recognitionError: msg } : d));
+      setSelected((prev) => prev ? { ...prev, status: "error", recognizing: false, recognitionError: msg } : prev);
+    }
+  };
+
   const handleDelete = async (id: number) => {
     if (!confirm("Удалить документ?")) return;
     await api.documents.delete(id);
@@ -370,7 +410,7 @@ export default function Documents() {
           <span className="text-xs text-muted-foreground text-center">1 или несколько страниц</span>
         </button>
         <button onClick={() => inputRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-2 p-4 card-fin border-dashed border-border/60 rounded-xl text-muted-foreground active:scale-95 transition-transform">
+          className="flex flex-col items-center justify-center gap-2 p-4 card-fin border-2 border-dashed border-border/60 rounded-xl text-muted-foreground active:scale-95 transition-transform">
           <Icon name="Upload" size={26} />
           <span className="text-sm font-medium">Загрузить файл</span>
           <span className="text-xs">PDF, JPG, PNG, XLS</span>
@@ -394,7 +434,7 @@ export default function Documents() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 sm:gap-4">
         {/* List */}
         <div className={`lg:col-span-2 card-fin flex flex-col ${mobileView === "detail" ? "hidden lg:flex" : "flex"}`}>
           <div className="p-4 border-b border-border hidden lg:block">
@@ -422,22 +462,22 @@ export default function Documents() {
               </div>
             )}
             {docs.map((doc) => (
-              <div key={doc.id} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all mb-1 ${selected?.id === doc.id ? "bg-gold/10 border border-gold/30" : "hover:bg-secondary border border-transparent"}`}>
-                <button onClick={() => handleSelect(doc)} className="flex-1 flex items-center gap-3 text-left min-w-0">
+              <div key={doc.id} className={`flex items-center gap-2.5 sm:gap-3 p-2.5 sm:p-3 rounded-lg cursor-pointer transition-all mb-1 ${selected?.id === doc.id ? "bg-gold/10 border border-gold/30" : "hover:bg-secondary border border-transparent"}`}>
+                <button onClick={() => handleSelect(doc)} className="flex-1 flex items-center gap-2.5 sm:gap-3 text-left min-w-0">
                   <div className="w-9 h-9 rounded flex items-center justify-center bg-secondary flex-shrink-0">
                     <Icon name={isImage(doc.name) ? "Image" : "FileText"} size={17} className="text-muted-foreground" />
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="text-sm truncate">{doc.name}</div>
-                    <div className="text-xs text-muted-foreground">{doc.size_label}</div>
+                    <div className="text-[11px] sm:text-xs text-muted-foreground">{doc.size_label}</div>
                   </div>
                 </button>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
+                <div className="flex items-center gap-1 flex-shrink-0">
                   {doc.recognizing && <div className="w-3.5 h-3.5 rounded-full border-2 border-gold border-t-transparent animate-spin" />}
-                  {!doc.recognizing && doc.status === "done" && <Icon name="CheckCircle" size={14} className="text-positive" />}
-                  {!doc.recognizing && doc.status === "error" && <Icon name="AlertCircle" size={14} className="text-negative" />}
-                  <button onClick={() => handleDelete(doc.id)} className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-negative transition-colors">
-                    <Icon name="Trash2" size={12} />
+                  {!doc.recognizing && doc.status === "done" && <Icon name="CheckCircle" size={15} className="text-positive" />}
+                  {!doc.recognizing && doc.status === "error" && <Icon name="AlertCircle" size={15} className="text-negative" />}
+                  <button onClick={(e) => { e.stopPropagation(); handleDelete(doc.id); }} className="w-8 h-8 rounded flex items-center justify-center text-muted-foreground hover:text-negative hover:bg-red-900/10 transition-colors">
+                    <Icon name="Trash2" size={14} />
                   </button>
                 </div>
               </div>
@@ -446,15 +486,15 @@ export default function Documents() {
         </div>
 
         {/* Detail */}
-        <div className={`lg:col-span-3 card-fin p-4 sm:p-5 flex flex-col min-h-64 ${mobileView === "list" ? "hidden lg:flex" : "flex"}`}>
+        <div className={`lg:col-span-3 card-fin p-3 sm:p-5 flex flex-col min-h-64 ${mobileView === "list" ? "hidden lg:flex" : "flex"}`}>
           {selected ? (
             <>
-              <div className="flex items-start justify-between mb-4 gap-2">
-                <div className="min-w-0">
-                  <div className="text-xs uppercase tracking-widest text-muted-foreground mb-1">ИИ-распознавание</div>
+              <div className="flex items-start justify-between mb-4 gap-2 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] sm:text-xs uppercase tracking-widest text-muted-foreground mb-1">ИИ-распознавание</div>
                   <div className="text-sm font-medium truncate">{selected.name}</div>
                 </div>
-                <div className="flex-shrink-0">
+                <div className="flex-shrink-0 flex items-center gap-2">
                   {selected.recognizing && (
                     <span className="flex items-center gap-1.5 text-xs text-gold bg-gold/10 px-2.5 py-1 rounded-full whitespace-nowrap">
                       <div className="w-2.5 h-2.5 rounded-full border-2 border-gold border-t-transparent animate-spin" />
@@ -470,6 +510,14 @@ export default function Documents() {
                     <span className="flex items-center gap-1.5 text-xs text-negative bg-red-900/20 px-2.5 py-1 rounded-full whitespace-nowrap">
                       <Icon name="AlertCircle" size={12} /> Ошибка
                     </span>
+                  )}
+                  {!selected.recognizing && selected.previewUrl && (
+                    <button onClick={recognizeAgain}
+                      title="Распознать заново"
+                      className="flex items-center gap-1.5 text-xs text-gold bg-gold/10 hover:bg-gold/20 px-2.5 py-1 rounded-full whitespace-nowrap transition-colors active:scale-95">
+                      <Icon name="RefreshCw" size={12} />
+                      <span className="hidden sm:inline">Заново</span>
+                    </button>
                   )}
                 </div>
               </div>
@@ -524,7 +572,16 @@ export default function Documents() {
                   {!selected.recognition?.transaction_id && !selected.recognition?.error && (
                     <div className="flex items-start gap-3 p-3 rounded-lg bg-yellow-900/20 border border-yellow-900/30">
                       <Icon name="AlertTriangle" size={16} className="text-yellow-400 flex-shrink-0 mt-0.5" />
-                      <div className="text-xs text-yellow-300">Сумма не распознана — заполните вручную и создайте операцию</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs text-yellow-300 mb-2">Сумма не распознана — заполните вручную или попробуйте распознать заново</div>
+                        {selected.previewUrl && (
+                          <button onClick={recognizeAgain}
+                            className="inline-flex items-center gap-1.5 text-xs bg-gold/15 hover:bg-gold/25 text-gold px-3 py-1.5 rounded-full transition-colors active:scale-95">
+                            <Icon name="RefreshCw" size={12} />
+                            Распознать заново
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -557,20 +614,21 @@ export default function Documents() {
                     {/* Show "create tx" only if not auto-created */}
                     {!selected.recognition?.transaction_id && (
                       <button onClick={openCreateTx}
-                        className="flex-1 py-2.5 bg-gold text-primary-foreground rounded text-sm font-medium hover:bg-yellow-500 transition-colors active:scale-95 flex items-center justify-center gap-2">
+                        className="flex-1 py-3 sm:py-2.5 bg-gold text-primary-foreground rounded text-sm font-medium hover:bg-yellow-500 transition-colors active:scale-95 flex items-center justify-center gap-2">
                         <Icon name="Plus" size={15} />
-                        Создать операцию вручную
+                        <span className="hidden sm:inline">Создать операцию вручную</span>
+                        <span className="sm:hidden">Создать операцию</span>
                       </button>
                     )}
                     {selected.recognition?.transaction_id && (
                       <button onClick={openCreateTx}
-                        className="flex-1 py-2.5 border border-border text-muted-foreground rounded text-sm hover:text-foreground hover:border-gold/40 transition-colors flex items-center justify-center gap-2">
+                        className="flex-1 py-3 sm:py-2.5 border border-border text-muted-foreground rounded text-sm hover:text-foreground hover:border-gold/40 transition-colors flex items-center justify-center gap-2">
                         <Icon name="Pencil" size={14} />
                         Исправить операцию
                       </button>
                     )}
                     <button onClick={() => handleDelete(selected.id)}
-                      className="px-4 py-2.5 border border-red-900/40 text-negative rounded text-sm hover:bg-red-900/20 transition-colors">
+                      className="px-4 py-3 sm:py-2.5 border border-red-900/40 text-negative rounded text-sm hover:bg-red-900/20 transition-colors flex-shrink-0">
                       <Icon name="Trash2" size={15} />
                     </button>
                   </div>
@@ -679,8 +737,8 @@ export default function Documents() {
                       {idx + 1}
                     </div>
                     <button onClick={() => removePage(idx)}
-                      className="absolute top-1.5 right-1.5 w-6 h-6 bg-red-600/90 text-white rounded-full flex items-center justify-center">
-                      <Icon name="X" size={11} />
+                      className="absolute top-1.5 right-1.5 w-8 h-8 bg-red-600/90 text-white rounded-full flex items-center justify-center active:scale-90 transition-transform">
+                      <Icon name="X" size={14} />
                     </button>
                   </div>
                 ))}
