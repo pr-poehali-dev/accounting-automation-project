@@ -6,8 +6,10 @@ Body: { file_b64, file_name, mime_type, doc_id }
 import json
 import os
 import base64
+import traceback
 import psycopg2
 import boto3
+from botocore.config import Config
 from datetime import datetime
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p79040548_accounting_automatio")
@@ -32,7 +34,7 @@ def get_s3_settings(cur):
     row = cur.fetchone()
     if not row or not row[2]:
         return None
-    return {"bucket": row[0], "endpoint": row[1].rstrip("/"), "access_key": row[2], "secret_key": row[3]}
+    return {"bucket": row[0], "endpoint": (row[1] or "").rstrip("/"), "access_key": row[2], "secret_key": row[3]}
 
 
 def handler(event: dict, context) -> dict:
@@ -42,7 +44,11 @@ def handler(event: dict, context) -> dict:
     if event.get("httpMethod") != "POST":
         return resp(405, {"error": "Method not allowed"})
 
-    body = json.loads(event.get("body") or "{}")
+    try:
+        body = json.loads(event.get("body") or "{}")
+    except Exception as e:
+        return resp(400, {"error": f"bad json: {e}"})
+
     file_b64 = body.get("file_b64", "")
     file_name = body.get("file_name", "document")
     mime_type = body.get("mime_type", "application/octet-stream")
@@ -51,21 +57,24 @@ def handler(event: dict, context) -> dict:
     if not file_b64:
         return resp(400, {"error": "file_b64 required"})
 
-    conn = get_conn()
-    cur = conn.cursor()
-
     try:
+        file_bytes = base64.b64decode(file_b64)
+    except Exception as e:
+        return resp(400, {"error": f"bad base64: {e}"})
+
+    conn = None
+    cur = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
         s3cfg = get_s3_settings(cur)
         if not s3cfg:
             return resp(400, {"error": "S3 не настроен. Заполните настройки S3 в разделе Настройки."})
 
-        # Build S3 key: documents/2026/05/filename.jpg
         now = datetime.now()
         folder = f"documents/{now.year}/{now.month:02d}"
-        safe_name = file_name.replace(" ", "_")
+        safe_name = (file_name or "document").replace(" ", "_").replace("/", "_")
         key = f"{folder}/{now.strftime('%H%M%S')}_{safe_name}"
-
-        file_bytes = base64.b64decode(file_b64)
 
         endpoint = s3cfg["endpoint"]
         if not endpoint.startswith("http"):
@@ -76,27 +85,41 @@ def handler(event: dict, context) -> dict:
             endpoint_url=endpoint,
             aws_access_key_id=s3cfg["access_key"],
             aws_secret_access_key=s3cfg["secret_key"],
-        )
-        s3.put_object(
-            Bucket=s3cfg["bucket"],
-            Key=key,
-            Body=file_bytes,
-            ContentType=mime_type,
-            ACL="public-read",
+            region_name="ru-1",
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
 
-        # Build public URL
+        put_kwargs = {
+            "Bucket": s3cfg["bucket"],
+            "Key": key,
+            "Body": file_bytes,
+            "ContentType": mime_type,
+        }
+        try:
+            s3.put_object(ACL="public-read", **put_kwargs)
+        except Exception as e1:
+            print(f"put_object with ACL failed: {e1}; retrying without ACL")
+            s3.put_object(**put_kwargs)
+
         file_url = f"{endpoint}/{s3cfg['bucket']}/{key}"
 
-        # Update document record
         if doc_id:
-            cur.execute(f"UPDATE {SCHEMA}.documents SET s3_url=%s, file_key=%s WHERE id=%s", (file_url, key, doc_id))
-            conn.commit()
+            try:
+                cur.execute(f"UPDATE {SCHEMA}.documents SET s3_url=%s, file_key=%s WHERE id=%s", (file_url, key, doc_id))
+                conn.commit()
+            except Exception as e:
+                print(f"DB update failed: {e}")
 
         return resp(200, {"ok": True, "url": file_url, "key": key})
 
     except Exception as e:
+        print("UPLOAD ERROR:", traceback.format_exc())
         return resp(500, {"error": str(e)})
     finally:
-        cur.close()
-        conn.close()
+        try:
+            if cur:
+                cur.close()
+            if conn:
+                conn.close()
+        except Exception:
+            pass
