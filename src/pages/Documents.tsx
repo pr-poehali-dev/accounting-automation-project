@@ -117,8 +117,8 @@ export default function Documents() {
     try {
       let result: RecognizeResult;
       if (isImage(file.name)) {
-        // Сжимаем перед отправкой — решает "Load failed" на мобильных
-        const compressed = await compressImageToBase64(file, 1400, 0.85);
+        // Высокое разрешение и качество — нужно для мелкого текста таблиц/итогов в накладных
+        const compressed = await compressImageToBase64(file, 2400, 0.92);
         result = await api.recognizeDoc({
           image_b64: compressed.b64,
           mime_type: compressed.mime,

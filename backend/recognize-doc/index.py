@@ -41,13 +41,18 @@ ANALYSIS_PROMPT = """Ты финансовый ИИ-бухгалтер для И
 - Счёт-фактура, УПД → "Счёт-фактура"
 - Акт выполненных работ → "Акт"
 
-ПРАВИЛА СУММЫ — ОЧЕНЬ ВАЖНО:
-- Ищи строки «Итого», «Всего», «ИТОГО», «К оплате», «на сумму», «Сумма НДС»
-- Число может быть «28 132,00» или «28 132.00» — убери пробелы, замени запятую на точку → 28132.00
-- Верни только итоговую сумму к оплате (не НДС, не по отдельным позициям)
+ПРАВИЛА СУММЫ — КРИТИЧЕСКИ ВАЖНО, ОБЯЗАТЕЛЬНО ВЕРНИ ЧИСЛО:
+1) ПЕРВЫМ ДЕЛОМ ищи слова: «Итого», «ИТОГО», «Всего к оплате», «К оплате», «Итого с НДС», «Всего», «на сумму», «Сумма».
+   Берёшь число РЯДОМ С ЭТИМ СЛОВОМ (справа или ниже). Это и есть amount.
+2) Если есть сумма ПРОПИСЬЮ — например «Двадцать восемь тысяч сто тридцать два рубля 00 копеек» — расшифруй её и
+   используй как контроль/основной источник: 28132.00.
+3) Формат чисел: «28 132,00» / «28132,00» / «28 132.00» — убери пробелы, замени запятую на точку → 28132.00.
+4) НИКОГДА не возвращай null если в тексте есть хоть одно число с «Итого» или сумма прописью.
+5) Если несколько чисел — выбирай МАКСИМАЛЬНОЕ из тех, что стоят рядом со словом «Итого/Всего/К оплате».
+6) Игнорируй НДС, цены отдельных позиций, количества (шт), артикулы (длинные коды).
 
 Верни ТОЛЬКО JSON без лишнего текста:
-{"amount":28132.00,"date":"2026-05-21","category":"Закупка товара","comment":"Товарный чек №1839 — 38 позиций товара, итого 28132 руб","doc_type":"Накладная","counterparty":"Склад Дили","inn":null,"type":"expense"}"""
+{"amount":28132.00,"date":"2026-05-21","category":"Закупка товара","comment":"Накладная — 38 позиций товара, итого 28 132 руб","doc_type":"Накладная","counterparty":"Склад Дили","inn":null,"type":"expense"}"""
 
 TYPE_TO_CATEGORY = {
     "накладная": "Закупка товара",
@@ -155,7 +160,7 @@ def yandex_gpt_analyze(ocr_text: str, file_name: str, yandex_key: str, yandex_fo
 
 
 def call_yandex(images: list, file_name: str, yandex_key: str, yandex_folder: str) -> dict:
-    """OCR всех страниц → объединяем текст → YandexGPT анализирует."""
+    """OCR всех страниц → объединяем текст → YandexGPT анализирует. Возвращает поля + ocr_text."""
     all_texts = []
     for idx, img in enumerate(images[:5]):
         b64 = img.get("b64", "")
@@ -170,7 +175,53 @@ def call_yandex(images: list, file_name: str, yandex_key: str, yandex_folder: st
             all_texts.append(f"=== Страница {idx + 1} === [ошибка OCR: {e}]")
 
     combined = "\n\n".join(all_texts) if all_texts else "[текст не извлечён]"
-    return yandex_gpt_analyze(combined, file_name, yandex_key, yandex_folder)
+    result = yandex_gpt_analyze(combined, file_name, yandex_key, yandex_folder)
+    result["_ocr_text"] = combined
+    return result
+
+
+# ── Регулярка: ищем итоговую сумму в OCR-тексте ─────────────────────────
+
+AMOUNT_KEYWORDS = [
+    r"итого\s+к\s+оплат[еay]",
+    r"всего\s+к\s+оплат[еay]",
+    r"к\s+оплат[еay]",
+    r"итого[\s:]+с\s+ндс",
+    r"итого\s+с\s+ндс",
+    r"всего\s+с\s+ндс",
+    r"итого",
+    r"всего",
+    r"сумма",
+]
+
+
+def find_total_in_text(text: str) -> float | None:
+    """Эвристика: ищем итоговую сумму в OCR-тексте, если AI не справился."""
+    if not text:
+        return None
+    text_low = text.lower()
+    # Универсальная регулярка числа: 28 132,00 / 28132.00 / 28 132 / 28132
+    num_re = r"(\d{1,3}(?:[\s\u00a0]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)"
+    candidates = []
+    for priority, kw in enumerate(AMOUNT_KEYWORDS):
+        # Ищем число после ключевого слова в радиусе 80 символов
+        for m in re.finditer(kw, text_low):
+            window = text[m.end(): m.end() + 120]
+            num_match = re.search(num_re, window)
+            if num_match:
+                raw = num_match.group(1)
+                cleaned = raw.replace("\u00a0", "").replace(" ", "").replace(",", ".")
+                try:
+                    val = float(cleaned)
+                    if val > 0:
+                        candidates.append((priority, val))
+                except Exception:
+                    pass
+    if not candidates:
+        return None
+    # Берём кандидата с наивысшим приоритетом, при равенстве — наибольшую сумму
+    candidates.sort(key=lambda x: (x[0], -x[1]))
+    return candidates[0][1]
 
 
 # ── Gemini Flash Vision (запасной) ────────────────────────────────────────
@@ -483,6 +534,13 @@ def handler(event: dict, context) -> dict:
             provider_used = "deepseek-text"
 
         amount = clean_amount(fields.get("amount"))
+        # Если ИИ не нашёл сумму — пробуем сами вытащить её регуляркой из OCR-текста
+        ocr_text = fields.get("_ocr_text", "")
+        if not amount and ocr_text:
+            heuristic_amount = find_total_in_text(ocr_text)
+            if heuristic_amount:
+                amount = heuristic_amount
+                provider_used = f"{provider_used}+regex"
         tx_date, date_found = normalize_date(fields.get("date"))
         doc_type = fields.get("doc_type") or "Документ"
         category = apply_rules(doc_type, fields.get("category") or "")
