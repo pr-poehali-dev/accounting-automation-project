@@ -47,7 +47,13 @@ export default function AdminSettings() {
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    error?: string;
+    ai_model?: string;
+    ai?: { ok: boolean; error?: string };
+    yandex?: { ok: boolean | null; error?: string };
+  } | null>(null);
 
   // S3
   const [s3, setS3] = useState<S3Settings>({ bucket_name: "", endpoint_url: "https://s3.regru.cloud", access_key: "", secret_key_masked: "" });
@@ -348,16 +354,44 @@ export default function AdminSettings() {
 
           {/* Test connection result */}
           {testResult && (
-            <div className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm animate-fade-in ${
-              testResult.ok
-                ? "bg-green-900/20 border-green-900/30 text-positive"
-                : "bg-red-900/20 border-red-900/30 text-negative"
-            }`}>
-              <Icon name={testResult.ok ? "CheckCircle" : "AlertCircle"} size={16} className="flex-shrink-0 mt-0.5" />
-              <div>
-                {testResult.ok
-                  ? <>Подключение успешно. Модель <strong>{currentModel?.name}</strong> отвечает.</>
-                  : <>{testResult.error || "Не удалось подключиться"}</>}
+            <div className="space-y-2 animate-fade-in">
+              {/* ИИ-модель */}
+              <div className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${
+                testResult.ai?.ok
+                  ? "bg-green-900/20 border-green-900/30"
+                  : "bg-red-900/20 border-red-900/30"
+              }`}>
+                <Icon name={testResult.ai?.ok ? "CheckCircle" : "AlertCircle"} size={15} className={`flex-shrink-0 mt-0.5 ${testResult.ai?.ok ? "text-positive" : "text-negative"}`} />
+                <div>
+                  <div className={`font-medium ${testResult.ai?.ok ? "text-positive" : "text-negative"}`}>
+                    ИИ-чат ({currentModel?.name}): {testResult.ai?.ok ? "✓ работает" : "✗ ошибка"}
+                  </div>
+                  {!testResult.ai?.ok && testResult.ai?.error && (
+                    <div className="text-xs text-negative/80 mt-0.5">{testResult.ai.error}</div>
+                  )}
+                </div>
+              </div>
+              {/* Яндекс Vision */}
+              <div className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${
+                testResult.yandex?.ok === true
+                  ? "bg-green-900/20 border-green-900/30"
+                  : testResult.yandex?.ok === null
+                  ? "bg-secondary border-border"
+                  : "bg-red-900/20 border-red-900/30"
+              }`}>
+                <Icon
+                  name={testResult.yandex?.ok === true ? "CheckCircle" : testResult.yandex?.ok === null ? "Info" : "AlertCircle"}
+                  size={15}
+                  className={`flex-shrink-0 mt-0.5 ${testResult.yandex?.ok === true ? "text-positive" : testResult.yandex?.ok === null ? "text-muted-foreground" : "text-negative"}`}
+                />
+                <div>
+                  <div className={`font-medium ${testResult.yandex?.ok === true ? "text-positive" : testResult.yandex?.ok === null ? "text-muted-foreground" : "text-negative"}`}>
+                    Яндекс Vision (распознавание): {testResult.yandex?.ok === true ? "✓ работает" : testResult.yandex?.ok === null ? "— ключ не задан" : "✗ ошибка"}
+                  </div>
+                  {testResult.yandex?.error && (
+                    <div className="text-xs mt-0.5 text-negative/80">{testResult.yandex.error}</div>
+                  )}
+                </div>
               </div>
             </div>
           )}

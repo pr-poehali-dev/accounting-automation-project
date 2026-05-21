@@ -136,7 +136,13 @@ export const api = {
       }),
 
     testConnection: () =>
-      request<{ ok: boolean; error?: string; status?: number }>(
+      request<{
+        ok: boolean;
+        error?: string;
+        ai_model?: string;
+        ai?: { ok: boolean; error?: string };
+        yandex?: { ok: boolean | null; error?: string };
+      }>(
         `${URLS.aiSettings}?action=test`
       ),
   },
