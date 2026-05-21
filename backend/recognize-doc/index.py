@@ -96,8 +96,12 @@ def yandex_ocr(image_b64: str, yandex_key: str, yandex_folder: str) -> str:
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as r:
-        resp = json.loads(r.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            resp = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body_err = e.read().decode("utf-8", errors="replace")
+        raise Exception(f"Яндекс Vision HTTP {e.code}: {body_err[:200]}")
 
     # Собираем весь текст из блоков
     lines = []
@@ -350,12 +354,21 @@ def handler(event: dict, context) -> dict:
             all_imgs = []
 
         # 1. Яндекс Vision + YandexGPT (основной)
+        yandex_auth_failed = False
         if yandex_key and yandex_folder and all_imgs:
             try:
                 fields = call_yandex(all_imgs, file_name, yandex_key, yandex_folder)
                 provider_used = "yandex"
             except Exception as e:
-                error_details.append(f"Yandex: {e}")
+                err_str = str(e)
+                error_details.append(f"Yandex: {err_str}")
+                if "401" in err_str:
+                    yandex_auth_failed = True
+
+        # Если Яндекс — единственный ключ и он не прошёл аутентификацию — сразу ошибка
+        if yandex_auth_failed and not gemini_key and not deepseek_key:
+            return {"statusCode": 400, "headers": CORS,
+                    "body": json.dumps({"error": "Яндекс API ключ недействителен (401). Проверьте ключ в Настройках → Нейросеть."}, ensure_ascii=False)}
 
         # 2. Gemini Flash (запасной с vision)
         if not fields.get("doc_type") and gemini_key and all_imgs:
@@ -370,6 +383,9 @@ def handler(event: dict, context) -> dict:
 
         # 3. DeepSeek text (последний fallback)
         if not fields.get("doc_type"):
+            if yandex_auth_failed:
+                return {"statusCode": 400, "headers": CORS,
+                        "body": json.dumps({"error": "Яндекс API ключ недействителен (401). Обновите ключ в Настройках → Нейросеть."}, ensure_ascii=False)}
             fields = call_deepseek_text(file_name, deepseek_key)
             provider_used = "deepseek-text"
 
