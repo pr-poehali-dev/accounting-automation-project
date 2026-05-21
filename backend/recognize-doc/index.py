@@ -396,10 +396,37 @@ def parse_json(text: str) -> dict:
         return {}
 
 
-def apply_rules(doc_type: str, category: str) -> str:
+def apply_rules(doc_type: str, category: str, ocr_text: str = "") -> str:
+    """Постобработка категории: если ИИ вернул 'Прочее' — пытаемся определить по типу и тексту."""
+    text_low = (ocr_text or "").lower()
+    dt = (doc_type or "").lower()
+
+    # Сильные сигналы по тексту документа — приоритет над тем, что вернул ИИ
+    if any(x in text_low for x in ("азс", "аи-92", "аи-95", "аи-98", "дизель", "дт ", "бензин",
+                                     "топливо", "лукойл", "роснефть", "газпромнефть", "татнефть",
+                                     "башнефть", "shell", "shell ", "neste")):
+        return "ГСМ"
+    if any(x in text_low for x in ("товарный чек", "товарная накладная", "торг-12", "торг 12",
+                                     "накладная №", "накладная no", "тмц", "номенклатура")):
+        return "Закупка товара"
+    if any(x in text_low for x in ("аренда помещен", "арендная плата", "арендодател")):
+        return "Аренда"
+    if any(x in text_low for x in ("бухгалтерск", "юридическ", "консультац", "аудиторск")):
+        return "Бухгалтерские услуги"
+    if any(x in text_low for x in ("реклам", "маркетинг", "продвижени", "контекст", "директ", "таргет")):
+        return "Маркетинг"
+    if any(x in text_low for x in ("доставк", "транспортн", "логистик", "перевозк")):
+        return "Логистика"
+    if any(x in text_low for x in ("зарплат", "оплата труда", "аванс работник")):
+        return "Зарплаты"
+    if any(x in text_low for x in ("оборудовани", "станок", "техника", "инструмент")):
+        return "Оборудование"
+
+    # Если ИИ дал валидную категорию — оставляем
     if category and category not in ("Прочее", "", None):
         return category
-    dt = (doc_type or "").lower()
+
+    # По типу документа
     for key, cat in TYPE_TO_CATEGORY.items():
         if key in dt:
             return cat
@@ -408,6 +435,28 @@ def apply_rules(doc_type: str, category: str) -> str:
     if "чек" in dt and any(x in dt for x in ("азс", "запр", "топлив", "бенз")):
         return "ГСМ"
     return category or "Прочее"
+
+
+def detect_doc_type(ocr_text: str, current_type: str = "") -> str:
+    """Определяет тип документа по тексту. Возвращает текущий если не нашли."""
+    text_low = (ocr_text or "").lower()
+    # Накладная — наличие товарной таблицы
+    if any(x in text_low for x in ("товарная накладная", "товарный чек", "торг-12", "торг 12",
+                                     "накладная №", "накладная no", "накладная n")):
+        return "Накладная"
+    # УПД / Счёт-фактура
+    if any(x in text_low for x in ("упд", "счёт-фактур", "счет-фактур", "счет фактур")):
+        return "Счёт-фактура"
+    # Акт
+    if "акт выполненных работ" in text_low or "акт оказания услуг" in text_low:
+        return "Акт"
+    # Чек кассовый
+    if "кассовый чек" in text_low or "фискальный чек" in text_low or "ффд" in text_low:
+        return "Чек"
+    # Просто "чек" + товары → накладная (товарный чек)
+    if "чек" in text_low and any(x in text_low for x in ("товар", "наименован", "кол-во", "цена", "сумма")):
+        return "Накладная"
+    return current_type or "Документ"
 
 
 def clean_amount(raw) -> float | None:
@@ -641,8 +690,10 @@ def handler(event: dict, context) -> dict:
                 amount = heuristic_amount
                 provider_used = f"{provider_used}+regex"
         tx_date, date_found = normalize_date(fields.get("date"))
-        doc_type = fields.get("doc_type") or "Документ"
-        category = apply_rules(doc_type, fields.get("category") or "")
+        # Тип документа: подсказываем по OCR-тексту
+        doc_type = detect_doc_type(ocr_text, fields.get("doc_type") or "")
+        # Категория: используем расширенный apply_rules с анализом текста
+        category = apply_rules(doc_type, fields.get("category") or "", ocr_text)
         comment = fields.get("comment") or fields.get("description") or ""
         counterparty = fields.get("counterparty")
         inn = fields.get("inn")

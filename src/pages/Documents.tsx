@@ -88,10 +88,16 @@ export default function Documents() {
 
   // localStorage helpers для хранения превью между сессиями
   const savePreview = (docId: number, url: string) => {
+    // Сохраняем только data: URLs (base64). blob: ссылки не переживают перезагрузку.
+    if (!url.startsWith("data:")) return;
     try { localStorage.setItem(`doc_preview_${docId}`, url); } catch (_) { /* ignore */ }
   };
   const loadPreview = (docId: number): string | undefined => {
-    try { return localStorage.getItem(`doc_preview_${docId}`) ?? undefined; } catch (_) { return undefined; }
+    try {
+      const v = localStorage.getItem(`doc_preview_${docId}`);
+      if (!v || !v.startsWith("data:")) return undefined;
+      return v;
+    } catch (_) { return undefined; }
   };
   const removePreview = (docId: number) => {
     try { localStorage.removeItem(`doc_preview_${docId}`); } catch (_) { /* ignore */ }
@@ -213,15 +219,34 @@ export default function Documents() {
 
   const recognizeAgain = async () => {
     if (!selected) return;
-    if (!selected.previewUrl) {
-      alert("Нет сохранённого изображения для повторного распознавания. Загрузите файл заново.");
+    if (!selected.previewUrl || !selected.previewUrl.startsWith("data:")) {
+      alert("Изображение этого документа не сохранилось — загрузите файл заново для повторного распознавания.");
       return;
     }
     setDocs((prev) => prev.map((d) => d.id === selected.id ? { ...d, recognizing: true, status: "processing" } : d));
     setSelected((prev) => prev ? { ...prev, recognizing: true, status: "processing" } : prev);
     try {
-      // previewUrl уже data:image/jpeg;base64,...
-      const b64 = selected.previewUrl.split(",")[1];
+      // Перекодируем превью через canvas в свежий JPEG высокого качества
+      const b64 = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          const max = 2400;
+          if (width > max || height > max) {
+            if (width > height) { height = Math.round((height * max) / width); width = max; }
+            else { width = Math.round((width * max) / height); height = max; }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width; canvas.height = height;
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+          resolve(dataUrl.split(",")[1]);
+        };
+        img.onerror = () => reject(new Error("Не удалось прочитать изображение"));
+        img.src = selected.previewUrl!;
+      });
+      if (!b64 || b64.length < 200) throw new Error("Изображение слишком маленькое или повреждено");
       const result = await api.recognizeDoc({
         image_b64: b64,
         mime_type: "image/jpeg",
