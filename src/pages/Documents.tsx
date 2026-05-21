@@ -4,26 +4,49 @@ import { api, fmt, type DocRecord, type RecognizeResult } from "@/lib/api";
 
 const CATEGORIES = ["Услуги", "Аренда", "Зарплаты", "Оборудование", "Маркетинг", "Логистика", "Прочее"];
 
-function fileToBase64(file: File): Promise<string> {
+function isImage(name: string) {
+  return /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(name);
+}
+
+/** Сжимает изображение до maxSize px по длинной стороне, качество quality (0-1). Возвращает base64 без data:...;base64, */
+function compressImageToBase64(file: File, maxSize = 1200, quality = 0.82): Promise<{ b64: string; mime: string; previewUrl: string }> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result.split(",")[1] ?? result);
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxSize || height > maxSize) {
+        if (width > height) { height = Math.round((height * maxSize) / width); width = maxSize; }
+        else { width = Math.round((width * maxSize) / height); height = maxSize; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, width, height);
+      const mime = "image/jpeg";
+      const dataUrl = canvas.toDataURL(mime, quality);
+      URL.revokeObjectURL(url);
+      resolve({ b64: dataUrl.split(",")[1], mime, previewUrl: dataUrl });
     };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Не удалось загрузить изображение")); };
+    img.src = url;
   });
 }
 
-function isImage(name: string) {
-  return /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(name);
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => { const r = reader.result as string; resolve(r.split(",")[1] ?? r); };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 interface DocWithRecognition extends DocRecord {
   recognizing?: boolean;
   recognition?: RecognizeResult;
   recognitionError?: string;
+  previewUrl?: string;
 }
 
 export default function Documents() {
@@ -51,16 +74,17 @@ export default function Documents() {
 
   useEffect(() => { loadDocs(); }, []);
 
-  const recognizeFile = async (docId: number, file: File) => {
-    setDocs((prev) => prev.map((d) => d.id === docId ? { ...d, recognizing: true } : d));
-    setSelected((prev) => prev?.id === docId ? { ...prev, recognizing: true } : prev);
+  const recognizeFile = async (docId: number, file: File, previewUrl?: string) => {
+    setDocs((prev) => prev.map((d) => d.id === docId ? { ...d, recognizing: true, previewUrl } : d));
+    setSelected((prev) => prev?.id === docId ? { ...prev, recognizing: true, previewUrl } : prev);
     try {
       let result: RecognizeResult;
       if (isImage(file.name)) {
-        const b64 = await fileToBase64(file);
+        // Сжимаем перед отправкой — решает "Load failed" на мобильных
+        const compressed = await compressImageToBase64(file, 1400, 0.85);
         result = await api.recognizeDoc({
-          image_b64: b64,
-          mime_type: file.type || "image/jpeg",
+          image_b64: compressed.b64,
+          mime_type: compressed.mime,
           file_name: file.name,
           doc_id: docId,
           auto_create_tx: true,
@@ -100,16 +124,26 @@ export default function Documents() {
 
   const addFiles = async (files: File[]) => {
     for (const f of files) {
+      // Создаём превью сразу для отображения
+      let previewUrl: string | undefined;
+      if (isImage(f.name)) {
+        try {
+          const compressed = await compressImageToBase64(f, 1400, 0.85);
+          previewUrl = compressed.previewUrl;
+        } catch {
+          previewUrl = URL.createObjectURL(f);
+        }
+      }
       const res = await api.documents.create({
         name: f.name,
         size_label: `${(f.size / 1024 / 1024).toFixed(1)} МБ`,
         status: "processing",
       });
-      const newDoc: DocWithRecognition = { ...res.document, status: "processing", recognizing: true };
+      const newDoc: DocWithRecognition = { ...res.document, status: "processing", recognizing: true, previewUrl };
       setDocs((prev) => [newDoc, ...prev]);
       setSelected(newDoc);
       setMobileView("detail");
-      recognizeFile(res.document.id, f);
+      recognizeFile(res.document.id, f, previewUrl);
     }
   };
 
@@ -287,11 +321,22 @@ export default function Documents() {
                 </div>
               </div>
 
+              {/* Document preview */}
+              {selected.previewUrl && (
+                <div className="mb-3 rounded-lg overflow-hidden border border-border bg-secondary/30">
+                  <img
+                    src={selected.previewUrl}
+                    alt="Документ"
+                    className="w-full max-h-52 object-contain"
+                  />
+                </div>
+              )}
+
               {selected.recognizing && (
-                <div className="flex-1 flex flex-col items-center justify-center gap-4 py-8">
+                <div className="flex flex-col items-center justify-center gap-3 py-6">
                   <div className="relative">
-                    <div className="w-16 h-16 rounded-full border-4 border-border border-t-gold animate-spin" />
-                    <Icon name="Sparkles" size={20} className="text-gold absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                    <div className="w-14 h-14 rounded-full border-4 border-border border-t-gold animate-spin" />
+                    <Icon name="Sparkles" size={18} className="text-gold absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
                   </div>
                   <div className="text-sm font-medium">ИИ анализирует документ</div>
                   <div className="text-xs text-muted-foreground text-center max-w-xs">Извлекаю сумму, дату, контрагента и категорию...</div>
@@ -299,7 +344,7 @@ export default function Documents() {
               )}
 
               {!selected.recognizing && selected.status === "error" && (
-                <div className="flex-1 flex flex-col items-center justify-center gap-3 py-8">
+                <div className="flex flex-col items-center justify-center gap-3 py-6">
                   <Icon name="AlertCircle" size={32} className="text-negative" />
                   <div className="text-sm text-negative text-center">{selected.recognitionError || "Не удалось распознать документ"}</div>
                   <div className="text-xs text-muted-foreground text-center">Убедитесь что добавлен API ключ в Настройках</div>

@@ -67,48 +67,64 @@ def get_api_key(conn):
     return (row[0] or "") if row else ""
 
 
-def call_deepseek(image_b64: str, mime_type: str, file_name: str, api_key: str) -> str:
-    """Вызов DeepSeek. Для изображений используем vision endpoint."""
-    if image_b64:
-        # Используем deepseek-chat с multimodal (vision)
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type};base64,{image_b64}"},
-                    },
-                    {"type": "text", "text": "Распознай этот финансовый документ. Верни JSON."},
-                ],
-            },
-        ]
-        model = "deepseek-chat"
-    else:
-        # Fallback для PDF — только по имени файла
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Имя файла: {file_name}. Заполни что можешь, остальное null. doc_type=Документ."},
-        ]
-        model = "deepseek-chat"
-
-    payload = {
-        "model": model,
-        "messages": messages,
-        "max_tokens": 600,
-        "temperature": 0.05,
-        "response_format": {"type": "json_object"},
-    }
+def _post_deepseek(payload: dict, api_key: str, timeout: int = 50) -> str:
+    """Базовый POST к DeepSeek API."""
     req = urllib.request.Request(
         "https://api.deepseek.com/v1/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=45) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         data = json.loads(r.read().decode("utf-8"))
         return data["choices"][0]["message"]["content"]
+
+
+def call_deepseek(image_b64: str, mime_type: str, file_name: str, api_key: str) -> str:
+    """Вызов DeepSeek. Для изображений пробуем vision, если не поддерживается — текстовый fallback."""
+    if image_b64:
+        # Пробуем vision через deepseek-chat (поддерживает изображения через compatible API)
+        vision_payload = {
+            "model": "deepseek-chat",
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_b64}"}},
+                        {"type": "text", "text": "Распознай финансовый документ. Верни только JSON."},
+                    ],
+                },
+            ],
+            "max_tokens": 700,
+            "temperature": 0.05,
+        }
+        try:
+            return _post_deepseek(vision_payload, api_key)
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace")
+            # Если vision не поддерживается — пробуем текстовый fallback
+            if e.code in (400, 422):
+                pass  # fallthrough to text
+            else:
+                raise
+
+    # Текстовый режим (для PDF или fallback)
+    text_payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": (
+                f"Имя файла документа: «{file_name}».\n"
+                "Определи по имени файла что это за документ и заполни JSON. "
+                "Все числовые поля — null если не определить по имени файла."
+            )},
+        ],
+        "max_tokens": 500,
+        "temperature": 0.05,
+        "response_format": {"type": "json_object"},
+    }
+    return _post_deepseek(text_payload, api_key)
 
 
 def parse_response(text: str) -> dict:
