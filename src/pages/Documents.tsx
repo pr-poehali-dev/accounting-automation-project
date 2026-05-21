@@ -53,15 +53,6 @@ function compressImageToBase64(file: File, maxSize = 1200, quality = 0.82): Prom
   });
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => { const r = reader.result as string; resolve(r.split(",")[1] ?? r); };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
 interface DocWithRecognition extends DocRecord {
   recognizing?: boolean;
   recognition?: RecognizeResult;
