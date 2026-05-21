@@ -129,7 +129,7 @@ export const api = {
     get: () =>
       request<{ settings: AiSettings }>(URLS.aiSettings),
 
-    update: (data: Partial<AiSettings> & { api_key?: string }) =>
+    update: (data: Partial<AiSettings> & { api_key?: string; gemini_api_key?: string }) =>
       request<{ settings: AiSettings }>(URLS.aiSettings, {
         method: "PUT",
         body: JSON.stringify(data),
@@ -231,6 +231,8 @@ export interface AiSettings {
   system_prompt: string;
   api_key_set?: boolean;
   api_key_masked?: string;
+  gemini_key_set?: boolean;
+  gemini_key_masked?: string;
   updated_at?: string;
 }
 

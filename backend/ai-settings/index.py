@@ -128,12 +128,13 @@ def handler(event: dict, context) -> dict:
         # GET /
         if method == "GET":
             cur.execute(f"""
-                SELECT selected_model, max_tokens, temperature, system_prompt, api_key, updated_at
+                SELECT selected_model, max_tokens, temperature, system_prompt, api_key, updated_at, gemini_api_key
                 FROM {SCHEMA}.ai_settings WHERE id = 1
             """)
             row = cur.fetchone()
             if not row:
                 return resp(404, {"error": "Settings not found"})
+            gemini_key = row[6] or os.environ.get("GEMINI_API_KEY", "")
             result = {
                 "selected_model": row[0],
                 "max_tokens": row[1],
@@ -141,6 +142,8 @@ def handler(event: dict, context) -> dict:
                 "system_prompt": row[3],
                 "api_key_set": bool(row[4] or os.environ.get("DEEPSEEK_API_KEY")),
                 "api_key_masked": mask_key(row[4] or os.environ.get("DEEPSEEK_API_KEY", "")),
+                "gemini_key_set": bool(gemini_key),
+                "gemini_key_masked": mask_key(gemini_key),
                 "updated_at": str(row[5]),
             }
             return resp(200, {"settings": result})
@@ -154,20 +157,23 @@ def handler(event: dict, context) -> dict:
                 if f in body:
                     fields.append(f"{f} = %s")
                     params.append(body[f])
-            # api_key stored only if explicitly passed and non-empty
             if body.get("api_key"):
                 fields.append("api_key = %s")
                 params.append(body["api_key"])
+            if body.get("gemini_api_key"):
+                fields.append("gemini_api_key = %s")
+                params.append(body["gemini_api_key"])
             if not fields:
                 return resp(400, {"error": "No fields"})
             fields.append("updated_at = NOW()")
             params.append(1)
             cur.execute(f"""
                 UPDATE {SCHEMA}.ai_settings SET {', '.join(fields)} WHERE id = %s
-                RETURNING selected_model, max_tokens, temperature, system_prompt, api_key
+                RETURNING selected_model, max_tokens, temperature, system_prompt, api_key, gemini_api_key
             """, params)
             conn.commit()
             row = cur.fetchone()
+            gemini_key = row[5] or ""
             result = {
                 "selected_model": row[0],
                 "max_tokens": row[1],
@@ -175,6 +181,8 @@ def handler(event: dict, context) -> dict:
                 "system_prompt": row[3],
                 "api_key_set": bool(row[4] or os.environ.get("DEEPSEEK_API_KEY")),
                 "api_key_masked": mask_key(row[4] or os.environ.get("DEEPSEEK_API_KEY", "")),
+                "gemini_key_set": bool(gemini_key),
+                "gemini_key_masked": mask_key(gemini_key),
             }
             return resp(200, {"settings": result})
 

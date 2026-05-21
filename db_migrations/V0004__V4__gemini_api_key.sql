@@ -1,0 +1,1 @@
+ALTER TABLE t_p79040548_accounting_automatio.ai_settings ADD COLUMN IF NOT EXISTS gemini_api_key TEXT DEFAULT '';

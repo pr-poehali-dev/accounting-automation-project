@@ -37,6 +37,8 @@ export default function AdminSettings() {
   });
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState("");
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -113,9 +115,13 @@ export default function AdminSettings() {
       if (apiKeyInput.trim()) {
         payload.api_key = apiKeyInput.trim();
       }
+      if (geminiKeyInput.trim()) {
+        payload.gemini_api_key = geminiKeyInput.trim();
+      }
       const res = await api.aiSettings.update(payload);
       setSettings(res.settings);
       if (apiKeyInput.trim()) setApiKeyInput("");
+      if (geminiKeyInput.trim()) setGeminiKeyInput("");
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
@@ -250,6 +256,37 @@ export default function AdminSettings() {
               readOnly
               className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-muted-foreground focus:outline-none"
             />
+          </div>
+
+          {/* Gemini API Key — для распознавания фото */}
+          <div className="rounded-lg border border-blue-900/30 bg-blue-900/10 p-3.5 space-y-2.5">
+            <div className="flex items-center gap-2">
+              <Icon name="ScanLine" size={15} className="text-blue-400 flex-shrink-0" />
+              <div>
+                <div className="text-sm font-medium text-blue-300">Google Gemini — распознавание фото</div>
+                <div className="text-xs text-muted-foreground">Бесплатно. Нужен для чтения накладных и чеков</div>
+              </div>
+              {settings.gemini_key_set && (
+                <span className="ml-auto flex items-center gap-1 text-xs text-positive whitespace-nowrap"><Icon name="CheckCircle" size={11} />Ключ есть</span>
+              )}
+            </div>
+            <div className="relative">
+              <input
+                type={showGeminiKey ? "text" : "password"}
+                value={geminiKeyInput}
+                onChange={(e) => setGeminiKeyInput(e.target.value)}
+                placeholder={settings.gemini_key_masked || "AIzaSy..."}
+                className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-blue-500 pr-10"
+              />
+              <button type="button" onClick={() => setShowGeminiKey(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <Icon name={showGeminiKey ? "EyeOff" : "Eye"} size={15} />
+              </button>
+            </div>
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors">
+              <Icon name="ExternalLink" size={12} /> Получить бесплатный ключ на aistudio.google.com
+            </a>
           </div>
 
           {/* Test connection result */}

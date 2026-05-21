@@ -1,7 +1,7 @@
 """
 ИИ-распознавание документов.
-POST / — принимает base64-изображение, отправляет напрямую в DeepSeek Vision,
-авто-создаёт транзакцию в БД.
+Порядок: Gemini Flash (vision, бесплатный) → DeepSeek vision → DeepSeek текст.
+POST / — принимает base64-изображение, авто-создаёт транзакцию в БД.
 """
 import json
 import os
@@ -21,218 +21,117 @@ CORS = {
     "Content-Type": "application/json",
 }
 
-# Правила маппинга типа → категория (постфактум, если ИИ ошибся)
-DOC_TYPE_CATEGORY_MAP = {
-    "накладная": "Закупка товара",
-    "товарная накладная": "Закупка товара",
-    "торг-12": "Закупка товара",
-    "упд": "Закупка товара",
-    "счёт-фактура": "Закупка товара",
-    "счет-фактура": "Закупка товара",
-    "чек азс": "ГСМ",
-    "чек заправки": "ГСМ",
-    "акт": "Бухгалтерские услуги",
-    "договор аренды": "Аренда",
-}
+ANALYSIS_PROMPT = """Ты финансовый ИИ-бухгалтер для ИП России. Смотришь на фото финансового документа.
 
-SYSTEM_PROMPT = """Ты финансовый ИИ-бухгалтер для ИП России. Анализируешь фото/скан документа.
-
-ПРАВИЛА ОПРЕДЕЛЕНИЯ СТАТЬИ ЗАТРАТ (category):
-- Есть список товаров/номенклатуры/позиций ТМЦ → "Закупка товара"
+ПРАВИЛА КАТЕГОРИИ (category):
+- Таблица с товарами / номенклатура / позиции ТМЦ → "Закупка товара"
 - АЗС, топливо, бензин АИ-92/95, ДТ, солярка → "ГСМ"
 - Юридические, бухгалтерские, консультационные услуги → "Бухгалтерские услуги"
 - Офис, склад, помещение, аренда → "Аренда"
-- Зарплата, выплата сотрудникам → "Зарплаты"
-- Реклама, маркетинг, продвижение → "Маркетинг"
-- Доставка, транспорт, логистика → "Логистика"
-- Оборудование, техника, инструмент → "Оборудование"
-- Иначе — краткое название (1-3 слова)
+- Зарплата / выплата → "Зарплаты"
+- Реклама, маркетинг → "Маркетинг"
+- Доставка, транспорт → "Логистика"
+- Оборудование, техника → "Оборудование"
+- Иначе — 1-3 слова своими словами
 
-ПРАВИЛА ДЛЯ ТИПА ДОКУМЕНТА (doc_type):
-- Если видишь таблицу с номенклатурой товаров, наименованиями, ценами → "Накладная"
-- Если документ содержит слова "накладная", "ТОРГ", "ТМЦ" → "Накладная"
-- Если это чек с кассовым аппаратом, ФФД → "Чек"
-- Если это счёт-фактура, УПД → "Счёт-фактура"
-- Если это акт выполненных работ/услуг → "Акт"
+ПРАВИЛА ТИПА (doc_type):
+- Таблица с наименованиями товаров, артикулами, ценами → "Накладная"
+- Слова «накладная», «ТОРГ-12», «УПД», «ТМЦ» → "Накладная"
+- Кассовый чек, ФФД, QR-код ФНС → "Чек"
+- Счёт-фактура, УПД → "Счёт-фактура"
+- Акт выполненных работ → "Акт"
 
-КРИТИЧЕСКИ ВАЖНО ДЛЯ СУММЫ:
-- Ищи строки "Итого", "Всего", "ИТОГО", "Сумма", "К оплате", "на сумму", "ИТОГО:"
-- Число может быть написано: "28 132,00" или "28132.00" или "28 132.00"
-- Убери пробелы внутри числа, замени запятую на точку → верни 28132.00
-- Если сумма не найдена, опиши что видишь в поле comment
+ПРАВИЛА СУММЫ:
+- Ищи строки «Итого», «Всего», «ИТОГО», «К оплате», «на сумму»
+- «28 132,00» или «28 132.00» → верни 28132.00 (убери пробелы, замени запятую на точку)
 
-Верни СТРОГО только JSON:
-{
-  "amount": 28132.00,
-  "date": "2026-05-21",
-  "category": "Закупка товара",
-  "comment": "Накладная ТАМ000 — 21 наименование товара, итого 28132 руб",
-  "doc_type": "Накладная",
-  "counterparty": "ООО Поставщик",
-  "inn": null,
-  "type": "expense"
+Верни ТОЛЬКО JSON без лишнего текста:
+{"amount":28132.00,"date":"2026-05-21","category":"Закупка товара","comment":"Накладная — 21 позиция товара","doc_type":"Накладная","counterparty":"ООО Поставщик","inn":null,"type":"expense"}"""
+
+TYPE_TO_CATEGORY = {
+    "накладная": "Закупка товара",
+    "торг": "Закупка товара",
+    "упд": "Закупка товара",
+    "счёт-фактура": "Закупка товара",
+    "счет-фактура": "Закупка товара",
 }
 
-ТОЛЬКО JSON, никакого другого текста!"""
+
+def get_conn():
+    return psycopg2.connect(os.environ["DATABASE_URL"])
 
 
-def get_api_key(conn):
-    key = os.environ.get("DEEPSEEK_API_KEY", "")
-    if key:
-        return key
+def get_keys(conn):
     cur = conn.cursor()
-    cur.execute(f"SELECT api_key FROM {SCHEMA}.ai_settings WHERE id = 1")
+    cur.execute(f"SELECT api_key, gemini_api_key FROM {SCHEMA}.ai_settings WHERE id=1")
     row = cur.fetchone()
     cur.close()
-    return (row[0] or "") if row else ""
+    if not row:
+        return "", ""
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "") or (row[0] or "")
+    gemini_key = os.environ.get("GEMINI_API_KEY", "") or (row[1] or "")
+    return deepseek_key, gemini_key
 
 
-def preprocess_image(image_b64: str, target_size: int = 1600) -> tuple[str, str]:
-    """Улучшает качество изображения для распознавания."""
-    try:
-        from PIL import Image, ImageEnhance, ImageFilter
-        img_bytes = base64.b64decode(image_b64)
-        img = Image.open(io.BytesIO(img_bytes))
-
-        # Конвертируем в RGB если нужно
-        if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
-
-        # Масштабируем до нужного размера (увеличиваем мелкий текст)
-        w, h = img.size
-        if max(w, h) < target_size:
-            scale = target_size / max(w, h)
-            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-
-        # Повышаем резкость и контрастность
-        img = img.filter(ImageFilter.SHARPEN)
-        img = ImageEnhance.Contrast(img).enhance(1.3)
-        img = ImageEnhance.Sharpness(img).enhance(1.5)
-
-        # Сжимаем обратно
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=88, optimize=True)
-        result_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-        return result_b64, "image/jpeg"
-    except Exception:
-        return image_b64, "image/jpeg"
-
-
-def call_deepseek_vision(image_b64: str, mime: str, api_key: str) -> str:
-    """Отправляет изображение напрямую в DeepSeek Vision (deepseek-vl2 или compatible)."""
-    # DeepSeek не поддерживает vision в deepseek-chat, пробуем через openrouter-совместимый
-    # или через прямой base64 URL
-    data_url = f"data:{mime};base64,{image_b64}"
-
+def call_gemini_vision(image_b64: str, mime: str, gemini_key: str) -> dict:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
     payload = {
-        "model": "deepseek-chat",
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": data_url, "detail": "high"},
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            "Внимательно изучи этот финансовый документ.\n"
-                            "Найди ИТОГОВУЮ сумму (строка Итого/Всего/К оплате).\n"
-                            "Определи тип документа (накладная/чек/счёт и т.д.).\n"
-                            "Верни JSON."
-                        ),
-                    },
-                ],
-            },
-        ],
-        "max_tokens": 800,
-        "temperature": 0.05,
+        "contents": [{"parts": [
+            {"inline_data": {"mime_type": mime, "data": image_b64}},
+            {"text": ANALYSIS_PROMPT + "\n\nПроанализируй документ на фото. Верни JSON."}
+        ]}],
+        "generationConfig": {"temperature": 0.05, "maxOutputTokens": 800, "responseMimeType": "application/json"},
     }
-    req = urllib.request.Request(
-        "https://api.deepseek.com/v1/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-        method="POST",
-    )
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                  headers={"Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(req, timeout=55) as r:
-        resp = json.loads(r.read().decode("utf-8"))
-        return resp["choices"][0]["message"]["content"]
+        resp = json.loads(r.read().decode())
+    text = resp["candidates"][0]["content"]["parts"][0]["text"]
+    return parse_json(text)
 
 
-def call_deepseek_text_with_desc(image_b64: str, file_name: str, api_key: str) -> str:
-    """Fallback: просим ИИ угадать по имени файла если vision не прошёл."""
+def call_gemini_multi(images: list, file_name: str, gemini_key: str) -> dict:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
+    parts = [{"inline_data": {"mime_type": img.get("mime", "image/jpeg"), "data": img["b64"]}} for img in images[:5]]
+    parts.append({"text": ANALYSIS_PROMPT + f"\n\nДокумент «{file_name}» ({len(images)} стр.). Найди итоговую сумму. Верни JSON."})
+    payload = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {"temperature": 0.05, "maxOutputTokens": 800, "responseMimeType": "application/json"},
+    }
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                  headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=60) as r:
+        resp = json.loads(r.read().decode())
+    text = resp["candidates"][0]["content"]["parts"][0]["text"]
+    return parse_json(text)
+
+
+def call_deepseek_text(file_name: str, deepseek_key: str) -> dict:
+    if not deepseek_key:
+        return {"doc_type": "Документ", "category": "Прочее",
+                "comment": "Добавьте Gemini API Key в Настройки → Нейросеть для распознавания фото"}
     payload = {
         "model": "deepseek-chat",
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    f"Имя файла: «{file_name}».\n"
-                    "По имени файла определи тип документа и категорию. "
-                    "amount, date, counterparty, inn — null. "
-                    "comment: «Документ не распознан — введите сумму вручную»."
-                ),
-            },
+            {"role": "system", "content": ANALYSIS_PROMPT},
+            {"role": "user", "content": f"Имя файла: «{file_name}». Числовые поля null. Только тип и категория."},
         ],
-        "max_tokens": 400,
-        "temperature": 0.05,
+        "max_tokens": 300, "temperature": 0.05,
         "response_format": {"type": "json_object"},
     }
-    req = urllib.request.Request(
-        "https://api.deepseek.com/v1/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-        method="POST",
-    )
+    req = urllib.request.Request("https://api.deepseek.com/v1/chat/completions",
+                                  data=json.dumps(payload).encode(),
+                                  headers={"Content-Type": "application/json", "Authorization": f"Bearer {deepseek_key}"},
+                                  method="POST")
     with urllib.request.urlopen(req, timeout=30) as r:
-        resp = json.loads(r.read().decode("utf-8"))
-        return resp["choices"][0]["message"]["content"]
+        resp = json.loads(r.read().decode())
+    return parse_json(resp["choices"][0]["message"]["content"])
 
 
-def call_ai_multi(images: list, file_name: str, api_key: str) -> str:
-    """Несколько страниц: vision для каждой, объединяем результаты."""
-    results = []
-    for idx, img in enumerate(images[:5]):  # не более 5 страниц
-        b64 = img.get("b64", "")
-        mime = img.get("mime", "image/jpeg")
-        if not b64:
-            continue
-        b64_proc, mime_proc = preprocess_image(b64, 1600)
-        try:
-            raw = call_deepseek_vision(b64_proc, mime_proc, api_key)
-            parsed = parse_response(raw)
-            results.append(parsed)
-        except Exception:
-            continue
-
-    if not results:
-        return call_deepseek_text_with_desc("", file_name, api_key)
-
-    # Берём первую страницу как основу
-    merged = results[0]
-
-    # Если сумма не найдена на первой — ищем на остальных
-    if not merged.get("amount"):
-        for r in results[1:]:
-            if r.get("amount"):
-                merged["amount"] = r["amount"]
-                break
-
-    # Если тип не определён — берём из любой страницы где определён
-    if merged.get("doc_type") in (None, "Документ", ""):
-        for r in results[1:]:
-            if r.get("doc_type") and r["doc_type"] != "Документ":
-                merged["doc_type"] = r["doc_type"]
-                break
-
-    return json.dumps(merged, ensure_ascii=False)
-
-
-def parse_response(text: str) -> dict:
+def parse_json(text: str) -> dict:
     text = text.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text).strip()
     start = text.find("{")
     end = text.rfind("}") + 1
     if start >= 0 and end > start:
@@ -246,18 +145,16 @@ def parse_response(text: str) -> dict:
         return {}
 
 
-def apply_category_rules(doc_type: str, category: str) -> str:
-    """Если категория 'Прочее' — применяем правила по типу документа."""
+def apply_rules(doc_type: str, category: str) -> str:
     if category and category not in ("Прочее", "", None):
         return category
-    dt = (doc_type or "").lower().strip()
-    for key, cat in DOC_TYPE_CATEGORY_MAP.items():
+    dt = (doc_type or "").lower()
+    for key, cat in TYPE_TO_CATEGORY.items():
         if key in dt:
             return cat
-    # Если это накладная — всегда Закупка товара
-    if "наклад" in dt or "торг" in dt or "упд" in dt or "тмц" in dt:
+    if any(x in dt for x in ("наклад", "торг", "упд", "тмц")):
         return "Закупка товара"
-    if "чек" in dt and ("азс" in dt or "запр" in dt or "бенз" in dt):
+    if "чек" in dt and any(x in dt for x in ("азс", "запр", "топлив", "бенз")):
         return "ГСМ"
     return category or "Прочее"
 
@@ -266,27 +163,21 @@ def clean_amount(raw) -> float | None:
     if raw is None:
         return None
     if isinstance(raw, (int, float)):
-        return float(raw) if raw > 0 else None
+        v = float(raw)
+        return v if v > 0 else None
     s = str(raw).strip()
-    # Убираем валюту и слова
     s = re.sub(r"[₽руб\.RUBrub]", "", s, flags=re.IGNORECASE).strip()
-    # Формат: 28 132,00 — пробел как разделитель тысяч
     if re.match(r"^\d[\d\s]*[,\.]\d{2}$", s):
         s = s.replace(" ", "").replace(",", ".")
     else:
         s = re.sub(r"[^\d,\.]", "", s)
-        if s.count(",") == 1 and s.count(".") == 0:
+        if s.count(",") == 1 and "." not in s:
             s = s.replace(",", ".")
-        elif s.count(",") >= 1 and "." not in s:
-            # 28,132 — американский формат
-            s = s.replace(",", "")
         elif s.count(",") >= 1:
             s = s.replace(",", "")
-    if not s:
-        return None
     try:
-        val = float(s)
-        return val if val > 0 else None
+        v = float(s)
+        return v if v > 0 else None
     except Exception:
         return None
 
@@ -307,89 +198,111 @@ def normalize_date(raw) -> tuple:
     return today, False
 
 
+def preprocess(b64: str) -> tuple:
+    try:
+        from PIL import Image, ImageEnhance, ImageFilter
+        img = Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
+        img = img.filter(ImageFilter.SHARPEN)
+        img = ImageEnhance.Contrast(img).enhance(1.2)
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=88)
+        return base64.b64encode(buf.getvalue()).decode(), "image/jpeg"
+    except Exception:
+        return b64, "image/jpeg"
+
+
 def handler(event: dict, context) -> dict:
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
     if event.get("httpMethod") != "POST":
-        return {"statusCode": 405, "headers": CORS,
-                "body": json.dumps({"error": "Method not allowed"})}
+        return {"statusCode": 405, "headers": CORS, "body": json.dumps({"error": "Method not allowed"})}
 
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    conn = get_conn()
     try:
-        api_key = get_api_key(conn)
-        if not api_key:
-            return {
-                "statusCode": 400, "headers": CORS,
-                "body": json.dumps({"error": "API ключ не настроен. Добавьте ключ DeepSeek в Настройки → Нейросеть."}, ensure_ascii=False),
-            }
-
+        deepseek_key, gemini_key = get_keys(conn)
         body = json.loads(event.get("body") or "{}")
         images_list = body.get("images", [])
+        image_b64 = body.get("image_b64", "")
+        mime_type = body.get("mime_type", "image/jpeg")
         file_name = body.get("file_name", "document")
         doc_id = body.get("doc_id")
         auto_create_tx = body.get("auto_create_tx", True)
 
-        # Мультистраничный режим
-        if images_list:
-            raw = call_ai_multi(images_list, file_name, api_key)
-            fields = parse_response(raw)
-        else:
-            image_b64 = body.get("image_b64", "")
-            mime_type = body.get("mime_type", "image/jpeg")
+        if not gemini_key and not deepseek_key:
+            return {"statusCode": 400, "headers": CORS,
+                    "body": json.dumps({"error": "Добавьте Gemini API Key в Настройки → Нейросеть (бесплатно на aistudio.google.com)"}, ensure_ascii=False)}
 
-            if image_b64:
-                # Улучшаем качество изображения
-                proc_b64, proc_mime = preprocess_image(image_b64, 1600)
-                try:
-                    raw = call_deepseek_vision(proc_b64, proc_mime, api_key)
-                    fields = parse_response(raw)
-                except urllib.error.HTTPError as e:
-                    # Vision не поддерживается — fallback
-                    err_b = e.read().decode("utf-8", errors="replace")
-                    if e.code in (400, 422, 415):
-                        raw = call_deepseek_text_with_desc(image_b64, file_name, api_key)
-                        fields = parse_response(raw)
-                        fields["_vision_failed"] = True
-                    else:
-                        raise
-            else:
-                raw = call_deepseek_text_with_desc("", file_name, api_key)
-                fields = parse_response(raw)
+        fields = {}
+        provider_used = "none"
+
+        # 1. Gemini Flash Vision — основной
+        if gemini_key:
+            try:
+                if images_list:
+                    proc = [{"b64": preprocess(i.get("b64", ""))[0], "mime": "image/jpeg"} for i in images_list[:5]]
+                    fields = call_gemini_multi(proc, file_name, gemini_key)
+                elif image_b64:
+                    pb, pm = preprocess(image_b64)
+                    fields = call_gemini_vision(pb, pm, gemini_key)
+                provider_used = "gemini"
+            except Exception as e:
+                fields = {"_gemini_error": str(e)}
+
+        # 2. DeepSeek vision fallback
+        if not fields.get("doc_type") and deepseek_key and image_b64:
+            try:
+                pb, pm = preprocess(image_b64)
+                payload = {
+                    "model": "deepseek-chat",
+                    "messages": [
+                        {"role": "system", "content": ANALYSIS_PROMPT},
+                        {"role": "user", "content": [
+                            {"type": "image_url", "image_url": {"url": f"data:{pm};base64,{pb}", "detail": "high"}},
+                            {"type": "text", "text": "Верни JSON."},
+                        ]},
+                    ],
+                    "max_tokens": 700, "temperature": 0.05,
+                }
+                req = urllib.request.Request("https://api.deepseek.com/v1/chat/completions",
+                                              data=json.dumps(payload).encode(),
+                                              headers={"Content-Type": "application/json", "Authorization": f"Bearer {deepseek_key}"},
+                                              method="POST")
+                with urllib.request.urlopen(req, timeout=50) as r:
+                    resp = json.loads(r.read().decode())
+                fields = parse_json(resp["choices"][0]["message"]["content"])
+                provider_used = "deepseek-vision"
+            except Exception:
+                pass
+
+        # 3. Text-only fallback
+        if not fields.get("doc_type"):
+            fields = call_deepseek_text(file_name, deepseek_key)
+            provider_used = "deepseek-text"
 
         amount = clean_amount(fields.get("amount"))
         tx_date, date_found = normalize_date(fields.get("date"))
         doc_type = fields.get("doc_type") or "Документ"
-        raw_category = fields.get("category") or "Прочее"
-
-        # Применяем правило: если тип накладная → Закупка товара, если Прочее
-        category = apply_category_rules(doc_type, raw_category)
+        category = apply_rules(doc_type, fields.get("category") or "")
         comment = fields.get("comment") or fields.get("description") or ""
         counterparty = fields.get("counterparty")
         inn = fields.get("inn")
         tx_type = fields.get("type", "expense")
 
         cur = conn.cursor()
-
         if doc_id:
             amt_str = f"₽ {amount:,.0f}".replace(",", " ") if amount else None
-            cur.execute(f"""
-                UPDATE {SCHEMA}.documents
-                SET status='done', rec_type=%s, rec_amount=%s, rec_date=%s,
-                    rec_counterparty=%s, rec_inn=%s
-                WHERE id=%s
-            """, (doc_type, amt_str, tx_date if date_found else None, counterparty, inn, doc_id))
+            cur.execute(f"""UPDATE {SCHEMA}.documents
+                SET status='done', rec_type=%s, rec_amount=%s, rec_date=%s, rec_counterparty=%s, rec_inn=%s
+                WHERE id=%s""", (doc_type, amt_str, tx_date if date_found else None, counterparty, inn, doc_id))
 
         tx_id = None
         if auto_create_tx and amount:
             sign = -1 if tx_type == "expense" else 1
-            tx_amount = amount * sign
             desc = comment or f"{doc_type}: {counterparty or file_name}"
-            cur.execute(f"""
-                INSERT INTO {SCHEMA}.transactions
+            cur.execute(f"""INSERT INTO {SCHEMA}.transactions
                     (date, description, category, amount, status, is_taxable, document_id)
-                VALUES (%s, %s, %s, %s, 'Выполнено', TRUE, %s)
-                RETURNING id
-            """, (tx_date, desc[:500], category, tx_amount, doc_id))
+                VALUES (%s, %s, %s, %s, 'Выполнено', TRUE, %s) RETURNING id""",
+                        (tx_date, desc[:500], category, amount * sign, doc_id))
             row = cur.fetchone()
             if row:
                 tx_id = row[0]
@@ -397,34 +310,16 @@ def handler(event: dict, context) -> dict:
         conn.commit()
         cur.close()
 
-        return {
-            "statusCode": 200, "headers": CORS,
-            "body": json.dumps({
-                "doc_type": doc_type,
-                "counterparty": counterparty,
-                "inn": inn,
-                "date": tx_date if date_found else None,
-                "amount": amount,
-                "amount_str": f"₽ {amount:,.0f}".replace(",", " ") if amount else None,
-                "description": comment,
-                "category": category,
-                "type": tx_type,
-                "transaction_id": tx_id,
-                "date_found": date_found,
-                "vision_failed": fields.get("_vision_failed", False),
-            }, ensure_ascii=False, default=str),
-        }
-
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="replace")
-        msg = f"DeepSeek API ошибка {e.code}"
-        try:
-            err_json = json.loads(err_body)
-            msg = err_json.get("error", {}).get("message", msg)
-        except Exception:
-            pass
         return {"statusCode": 200, "headers": CORS,
-                "body": json.dumps({"error": msg}, ensure_ascii=False)}
+                "body": json.dumps({
+                    "doc_type": doc_type, "counterparty": counterparty, "inn": inn,
+                    "date": tx_date if date_found else None,
+                    "amount": amount,
+                    "amount_str": f"₽ {amount:,.0f}".replace(",", " ") if amount else None,
+                    "description": comment, "category": category, "type": tx_type,
+                    "transaction_id": tx_id, "date_found": date_found, "provider": provider_used,
+                }, ensure_ascii=False, default=str)}
+
     except Exception as ex:
         return {"statusCode": 200, "headers": CORS,
                 "body": json.dumps({"error": str(ex)}, ensure_ascii=False)}
