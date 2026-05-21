@@ -111,7 +111,7 @@ def test_yandex(yandex_key: str, yandex_folder: str) -> dict:
         if e.code == 401:
             return {"ok": False, "error": f"Ключ недействителен (401). Создайте новый API-ключ в Яндекс Облаке."}
         if e.code == 403:
-            return {"ok": False, "error": f"Нет прав (403). Добавьте роль ai.vision.user сервисному аккаунту."}
+            return {"ok": False, "error": "Нет прав (403). Проверьте: 1) у сервисного аккаунта роль ai.vision.user; 2) область действия API-ключа включает yc.ai.vision.execute (или 'Все сервисы'). Ключ только с областью languageModels работать с Vision OCR не будет."}
         return {"ok": False, "error": f"HTTP {e.code}: {msg}"}
     except Exception as ex:
         return {"ok": False, "error": str(ex)}

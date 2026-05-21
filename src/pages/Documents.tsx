@@ -8,6 +8,10 @@ function isImage(name: string) {
   return /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(name);
 }
 
+function isSupported(name: string) {
+  return /\.(pdf|jpg|jpeg|png|webp|gif|bmp)$/i.test(name);
+}
+
 /** Сжимает изображение до maxSize px по длинной стороне, качество quality (0-1). Возвращает base64 без data:...;base64, */
 function compressImageToBase64(file: File, maxSize = 1200, quality = 0.82): Promise<{ b64: string; mime: string; previewUrl: string }> {
   return new Promise((resolve, reject) => {
@@ -151,7 +155,15 @@ export default function Documents() {
   };
 
   const addFiles = async (files: File[]) => {
-    for (const f of files) {
+    const skipped = files.filter((f) => !isSupported(f.name));
+    if (skipped.length) {
+      alert(
+        `Не поддерживается: ${skipped.map((f) => f.name).join(", ")}\n\n` +
+        "ИИ распознаёт только PDF, JPG, PNG. Excel-файлы (.xls/.xlsx) откройте и сохраните как PDF."
+      );
+    }
+    const accepted = files.filter((f) => isSupported(f.name));
+    for (const f of accepted) {
       // Создаём превью сразу для отображения
       let previewUrl: string | undefined;
       if (isImage(f.name)) {
