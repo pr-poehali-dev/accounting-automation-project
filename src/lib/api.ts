@@ -151,7 +151,7 @@ export const api = {
   },
 
   // ─── Recognize document ─────────────────────────────────
-  recognizeDoc: (params: { image_b64?: string; mime_type?: string; file_name?: string }) =>
+  recognizeDoc: (params: { image_b64?: string; mime_type?: string; file_name?: string; doc_id?: number; auto_create_tx?: boolean }) =>
     request<RecognizeResult>(URLS.recognizeDoc, {
       method: "POST",
       body: JSON.stringify(params),
@@ -246,6 +246,9 @@ export interface RecognizeResult {
   amount_str: string | null;
   description: string | null;
   category: string;
+  type?: "expense" | "income";
+  transaction_id?: number | null;
+  date_found?: boolean;
   error?: string;
 }
 

@@ -58,27 +58,41 @@ export default function Documents() {
       let result: RecognizeResult;
       if (isImage(file.name)) {
         const b64 = await fileToBase64(file);
-        result = await api.recognizeDoc({ image_b64: b64, mime_type: file.type || "image/jpeg", file_name: file.name });
+        result = await api.recognizeDoc({
+          image_b64: b64,
+          mime_type: file.type || "image/jpeg",
+          file_name: file.name,
+          doc_id: docId,
+          auto_create_tx: true,
+        });
       } else {
-        result = await api.recognizeDoc({ file_name: file.name });
+        result = await api.recognizeDoc({
+          file_name: file.name,
+          doc_id: docId,
+          auto_create_tx: true,
+        });
       }
 
-      await api.documents.update(docId, {
-        status: "done",
-        rec_type: result.doc_type,
-        rec_amount: result.amount_str || (result.amount ? `₽ ${result.amount}` : undefined),
-        rec_date: result.date || undefined,
-        rec_counterparty: result.counterparty || undefined,
-        rec_inn: result.inn || undefined,
-      });
+      // Обновляем документ в БД если ИИ не распознал (он мог уже обновить в бэке)
+      if (!result.error) {
+        await api.documents.update(docId, {
+          status: "done",
+          rec_type: result.doc_type,
+          rec_amount: result.amount_str || (result.amount ? `₽ ${result.amount}` : undefined),
+          rec_date: result.date || undefined,
+          rec_counterparty: result.counterparty || undefined,
+          rec_inn: result.inn || undefined,
+        });
+      }
 
       const updated = await api.documents.list();
       const updatedDoc = updated.documents.find((d) => d.id === docId);
-      setDocs((prev) => prev.map((d) => d.id === docId ? { ...(updatedDoc || d), recognizing: false, recognition: result } : d));
-      setSelected((prev) => prev?.id === docId ? { ...(updatedDoc || prev), recognizing: false, recognition: result } : prev);
+      const finalDoc = { ...(updatedDoc || {}), recognizing: false, recognition: result };
+      setDocs((prev) => prev.map((d) => d.id === docId ? { ...d, ...finalDoc } : d));
+      setSelected((prev) => prev?.id === docId ? { ...prev, ...finalDoc } : prev);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Ошибка распознавания";
-      await api.documents.update(docId, { status: "error" });
+      await api.documents.update(docId, { status: "error" }).catch(() => {});
       setDocs((prev) => prev.map((d) => d.id === docId ? { ...d, status: "error", recognizing: false, recognitionError: msg } : d));
       setSelected((prev) => prev?.id === docId ? { ...prev, status: "error", recognizing: false, recognitionError: msg } : prev);
     }
@@ -294,6 +308,28 @@ export default function Documents() {
 
               {selDone && (
                 <div className="space-y-2.5">
+                  {/* Auto-created transaction banner */}
+                  {selected.recognition?.transaction_id && (
+                    <div className="flex items-start gap-3 p-3 rounded-lg bg-green-900/20 border border-green-900/30 animate-fade-in">
+                      <Icon name="CheckCircle" size={16} className="text-positive flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-positive">Операция создана автоматически</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {selected.recognition.category} • {selected.recognition.amount_str || ""}
+                          {!selected.recognition.date_found && " • Дата не найдена — поставлена сегодня"}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Warning if amount not found — tx not created */}
+                  {!selected.recognition?.transaction_id && !selected.recognition?.error && (
+                    <div className="flex items-start gap-3 p-3 rounded-lg bg-yellow-900/20 border border-yellow-900/30">
+                      <Icon name="AlertTriangle" size={16} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+                      <div className="text-xs text-yellow-300">Сумма не распознана — заполните вручную и создайте операцию</div>
+                    </div>
+                  )}
+
                   {[
                     { label: "Тип документа", value: selected.rec_type, field: "rec_type", icon: "FileType" },
                     { label: "Контрагент / Поставщик", value: selected.rec_counterparty, field: "rec_counterparty", icon: "Building2" },
@@ -307,24 +343,34 @@ export default function Documents() {
 
                   {selected.recognition?.category && (
                     <div className="flex items-center gap-2 pt-1">
-                      <span className="text-xs text-muted-foreground">Категория:</span>
+                      <span className="text-xs text-muted-foreground">Статья затрат:</span>
                       <span className="text-xs bg-gold/15 text-gold px-2.5 py-1 rounded-full font-medium">{selected.recognition.category}</span>
                     </div>
                   )}
 
                   {selected.recognition?.description && (
                     <div className="card-fin-raised p-3 rounded-lg">
-                      <div className="text-xs text-muted-foreground mb-1">Что оплачено</div>
+                      <div className="text-xs text-muted-foreground mb-1">Описание</div>
                       <div className="text-sm leading-relaxed">{selected.recognition.description}</div>
                     </div>
                   )}
 
                   <div className="flex gap-2 pt-2">
-                    <button onClick={openCreateTx}
-                      className="flex-1 py-2.5 bg-gold text-primary-foreground rounded text-sm font-medium hover:bg-yellow-500 transition-colors active:scale-95 flex items-center justify-center gap-2">
-                      <Icon name="Plus" size={15} />
-                      Создать расходную операцию
-                    </button>
+                    {/* Show "create tx" only if not auto-created */}
+                    {!selected.recognition?.transaction_id && (
+                      <button onClick={openCreateTx}
+                        className="flex-1 py-2.5 bg-gold text-primary-foreground rounded text-sm font-medium hover:bg-yellow-500 transition-colors active:scale-95 flex items-center justify-center gap-2">
+                        <Icon name="Plus" size={15} />
+                        Создать операцию вручную
+                      </button>
+                    )}
+                    {selected.recognition?.transaction_id && (
+                      <button onClick={openCreateTx}
+                        className="flex-1 py-2.5 border border-border text-muted-foreground rounded text-sm hover:text-foreground hover:border-gold/40 transition-colors flex items-center justify-center gap-2">
+                        <Icon name="Pencil" size={14} />
+                        Исправить операцию
+                      </button>
+                    )}
                     <button onClick={() => handleDelete(selected.id)}
                       className="px-4 py-2.5 border border-red-900/40 text-negative rounded text-sm hover:bg-red-900/20 transition-colors">
                       <Icon name="Trash2" size={15} />
