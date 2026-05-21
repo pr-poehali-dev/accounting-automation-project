@@ -11,13 +11,13 @@ import AdminSettings from "@/pages/AdminSettings";
 
 type Section = "dashboard" | "transactions" | "documents" | "chat" | "taxes" | "admin";
 
-const nav: { id: Section; label: string; icon: string; badge?: string }[] = [
-  { id: "dashboard", label: "Главная", icon: "LayoutDashboard" },
-  { id: "transactions", label: "История операций", icon: "List" },
-  { id: "documents", label: "Документы", icon: "ScanLine", badge: "ИИ" },
-  { id: "chat", label: "ИИ-ассистент", icon: "MessageSquare", badge: "ИИ" },
-  { id: "taxes", label: "Налоговая отчётность", icon: "FileBarChart" },
-  { id: "admin", label: "Настройки", icon: "Settings2" },
+const nav: { id: Section; label: string; icon: string; shortLabel: string; badge?: string }[] = [
+  { id: "dashboard", label: "Главная", shortLabel: "Главная", icon: "LayoutDashboard" },
+  { id: "transactions", label: "История операций", shortLabel: "Операции", icon: "List" },
+  { id: "documents", label: "Документы", shortLabel: "Документы", icon: "ScanLine", badge: "ИИ" },
+  { id: "chat", label: "ИИ-ассистент", shortLabel: "ИИ-чат", icon: "MessageSquare", badge: "ИИ" },
+  { id: "taxes", label: "Налоговая отчётность", shortLabel: "Отчёты", icon: "FileBarChart" },
+  { id: "admin", label: "Настройки", shortLabel: "Настройки", icon: "Settings2" },
 ];
 
 const titles: Record<Section, string> = {
@@ -26,7 +26,7 @@ const titles: Record<Section, string> = {
   documents: "Документы",
   chat: "ИИ-ассистент",
   taxes: "Налоговая отчётность",
-  admin: "Настройки администратора",
+  admin: "Настройки",
 };
 
 const App = () => {
@@ -45,11 +45,14 @@ const App = () => {
   return (
     <TooltipProvider>
       <Toaster />
-      <div className="flex h-screen bg-background overflow-hidden">
+      <div className="flex h-[100dvh] bg-background overflow-hidden">
+
+        {/* Overlay for mobile sidebar */}
         {sidebarOpen && (
-          <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
+          <div className="fixed inset-0 bg-black/60 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
         )}
 
+        {/* Desktop sidebar */}
         <aside className={`
           fixed lg:static inset-y-0 left-0 z-30 w-60 flex flex-col
           bg-sidebar border-r border-sidebar-border
@@ -58,7 +61,7 @@ const App = () => {
         `}>
           <div className="px-5 py-5 border-b border-sidebar-border">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded bg-gold flex items-center justify-center">
+              <div className="w-7 h-7 rounded bg-gold flex items-center justify-center flex-shrink-0">
                 <Icon name="BarChart3" size={15} className="text-primary-foreground" />
               </div>
               <div>
@@ -97,7 +100,7 @@ const App = () => {
 
           <div className="p-4 border-t border-sidebar-border">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-gold/20 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full bg-gold/20 flex items-center justify-center flex-shrink-0">
                 <Icon name="User" size={14} className="text-gold" />
               </div>
               <div className="flex-1 min-w-0">
@@ -111,29 +114,36 @@ const App = () => {
           </div>
         </aside>
 
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-14 border-b border-border flex items-center gap-3 px-5 flex-shrink-0">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)} className="lg:hidden text-muted-foreground hover:text-foreground transition-colors">
+        {/* Main content */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* Header */}
+          <header className="h-12 lg:h-14 border-b border-border flex items-center gap-3 px-4 flex-shrink-0">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="lg:hidden text-muted-foreground hover:text-foreground transition-colors p-1 -ml-1"
+            >
               <Icon name="Menu" size={20} />
             </button>
 
-            <div className="flex-1 flex items-center gap-2">
-              <h1 className="text-sm font-semibold">{titles[section]}</h1>
-              <span className="text-border mx-1">·</span>
-              <span className="text-xs text-muted-foreground font-mono-fin">21 мая 2026</span>
+            <div className="flex-1 flex items-center gap-2 min-w-0">
+              <h1 className="text-sm font-semibold truncate">{titles[section]}</h1>
+              <span className="text-border hidden sm:block">·</span>
+              <span className="text-xs text-muted-foreground font-mono-fin hidden sm:block">21 мая 2026</span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <button className="relative w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-all">
                 <Icon name="Bell" size={16} />
                 <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-gold" />
               </button>
-              <button className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-all">
-                <Icon name="HelpCircle" size={16} />
-              </button>
-              <div className="h-5 w-px bg-border mx-1" />
+              <div className="hidden sm:flex items-center gap-1.5">
+                <button className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-foreground transition-all">
+                  <Icon name="HelpCircle" size={16} />
+                </button>
+                <div className="h-5 w-px bg-border mx-1" />
+              </div>
               <div className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-secondary transition-colors cursor-pointer">
-                <div className="w-6 h-6 rounded-full bg-gold flex items-center justify-center">
+                <div className="w-6 h-6 rounded-full bg-gold flex items-center justify-center flex-shrink-0">
                   <span className="text-xs font-semibold text-primary-foreground">А</span>
                 </div>
                 <span className="text-xs hidden sm:block">Администратор</span>
@@ -141,10 +151,33 @@ const App = () => {
             </div>
           </header>
 
-          <main className="flex-1 overflow-y-auto p-5">
+          {/* Page content — on mobile leave space for bottom nav */}
+          <main className="flex-1 overflow-y-auto p-3 sm:p-5 pb-20 lg:pb-5">
             {content}
           </main>
         </div>
+
+        {/* Mobile bottom navigation */}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-sidebar flex">
+          {nav.map((item) => {
+            const active = section === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setSection(item.id)}
+                className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors relative ${
+                  active ? "text-gold" : "text-muted-foreground"
+                }`}
+              >
+                {active && (
+                  <span className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full bg-gold" />
+                )}
+                <Icon name={item.icon} size={18} />
+                <span className="text-[10px] leading-none">{item.shortLabel}</span>
+              </button>
+            );
+          })}
+        </nav>
       </div>
     </TooltipProvider>
   );

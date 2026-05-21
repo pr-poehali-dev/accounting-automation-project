@@ -1,0 +1,22 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Chat request to DeepSeek",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "messages": [{"role": "user", "content": "Привет! Кратко ответь: что ты умеешь?"}],
+        "model": "deepseek-chat"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {"reply": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
