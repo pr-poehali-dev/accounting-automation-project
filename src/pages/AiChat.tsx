@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 
 const CHAT_URL = "https://functions.poehali.dev/1700fcd4-35b3-4a49-8472-292f760d2f96";
@@ -21,6 +21,9 @@ const suggestions = [
   "Топ-3 категории расходов?",
   "Сравни доходы апрель vs май",
   "Как снизить налоговую нагрузку?",
+  "Покажи расходы за этот месяц",
+  "Какой самый большой платёж?",
+  "Динамика доходов за квартал",
 ];
 
 const getTime = () => new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
@@ -40,14 +43,27 @@ function renderText(text: string) {
     .replace(/\n/g, "<br/>");
 }
 
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition;
+    webkitSpeechRecognition: new () => SpeechRecognition;
+  }
+}
+
 export default function AiChat() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [model, setModel] = useState("deepseek-chat");
+  const [recording, setRecording] = useState(false);
+  const [speechSupported] = useState(
+    () => typeof window !== "undefined" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window)
+  );
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const marqueeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -74,29 +90,19 @@ export default function AiChat() {
       const data = await resp.json();
 
       if (!resp.ok || data.error) {
-        const errText = data.error || `Ошибка ${resp.status}`;
         setMessages((prev) => [
           ...prev,
-          { id: Date.now() + 1, role: "assistant", text: errText, time: getTime(), error: true },
+          { id: Date.now() + 1, role: "assistant", text: data.error || `Ошибка ${resp.status}`, time: getTime(), error: true },
         ]);
       } else {
         const reply = data.reply as string;
-        setMessages((prev) => [
-          ...prev,
-          { id: Date.now() + 1, role: "assistant", text: reply, time: getTime() },
-        ]);
+        setMessages((prev) => [...prev, { id: Date.now() + 1, role: "assistant", text: reply, time: getTime() }]);
         setHistory((h) => [...h, { role: "assistant", content: reply }]);
       }
     } catch {
       setMessages((prev) => [
         ...prev,
-        {
-          id: Date.now() + 1,
-          role: "assistant",
-          text: "Не удалось подключиться к ИИ. Проверьте интернет-соединение.",
-          time: getTime(),
-          error: true,
-        },
+        { id: Date.now() + 1, role: "assistant", text: "Не удалось подключиться к ИИ. Проверьте интернет-соединение.", time: getTime(), error: true },
       ]);
     } finally {
       setLoading(false);
@@ -104,8 +110,8 @@ export default function AiChat() {
     }
   };
 
-  const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+  const handleKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
       e.preventDefault();
       send(input);
     }
@@ -117,8 +123,37 @@ export default function AiChat() {
     setInput("");
   };
 
+  const toggleRecording = useCallback(() => {
+    if (!speechSupported) return;
+
+    if (recording) {
+      recognitionRef.current?.stop();
+      setRecording(false);
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = "ru-RU";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onresult = (e) => {
+      const transcript = e.results[0][0].transcript;
+      setInput((prev) => (prev ? prev + " " + transcript : transcript));
+    };
+
+    recognition.onend = () => setRecording(false);
+    recognition.onerror = () => setRecording(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setRecording(true);
+  }, [recording, speechSupported]);
+
   return (
     <div className="animate-fade-in card-fin flex flex-col" style={{ height: "calc(100dvh - 112px)", minHeight: "400px" }}>
+      {/* Header */}
       <div className="px-4 py-3 border-b border-border flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-gold/20 flex items-center justify-center">
@@ -151,7 +186,8 @@ export default function AiChat() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4 sm:px-5">
+      {/* Messages — занимает всё свободное место */}
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4 sm:px-5 min-h-0">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex gap-2 sm:gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
             <div className={`w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center ${msg.role === "assistant" ? "bg-gold/20" : "bg-secondary"}`}>
@@ -194,42 +230,70 @@ export default function AiChat() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="p-3 sm:p-4 border-t border-border flex-shrink-0">
-        <div className="flex gap-1.5 mb-3 flex-wrap">
-          {suggestions.map((s) => (
-            <button
-              key={s}
-              onClick={() => send(s)}
-              disabled={loading}
-              className="text-xs px-2.5 py-1.5 rounded-full border border-border text-muted-foreground hover:border-gold/40 hover:text-foreground transition-all disabled:opacity-40"
-            >
-              {s}
-            </button>
-          ))}
+      {/* Bottom panel */}
+      <div className="border-t border-border flex-shrink-0">
+        {/* Бегущая строка с подсказками */}
+        <div className="relative overflow-hidden border-b border-border/50 py-2" ref={marqueeRef}>
+          <div className="flex gap-2 animate-marquee whitespace-nowrap">
+            {[...suggestions, ...suggestions].map((s, i) => (
+              <button
+                key={i}
+                onClick={() => send(s)}
+                disabled={loading}
+                className="inline-flex items-center text-xs px-3 py-1.5 rounded-full border border-border text-muted-foreground hover:border-gold/50 hover:text-foreground transition-all disabled:opacity-40 flex-shrink-0"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-2 items-end">
-          <textarea
+
+        {/* Поле ввода */}
+        <div className="flex gap-2 items-center px-3 py-2.5">
+          <input
             ref={inputRef}
+            type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKey}
-            placeholder="Введите сообщение... (Enter — отправить)"
-            rows={1}
-            className="flex-1 bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold resize-none"
-            style={{ maxHeight: "120px", overflowY: "auto" }}
+            placeholder="Введите сообщение..."
+            className="flex-1 bg-secondary border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold"
           />
+          {speechSupported && (
+            <button
+              onClick={toggleRecording}
+              title={recording ? "Остановить запись" : "Голосовой ввод"}
+              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
+                recording
+                  ? "bg-red-500 text-white animate-pulse"
+                  : "bg-secondary border border-border text-muted-foreground hover:text-foreground hover:border-gold/40"
+              }`}
+            >
+              <Icon name={recording ? "MicOff" : "Mic"} size={16} />
+            </button>
+          )}
           <button
             onClick={() => send(input)}
             disabled={!input.trim() || loading}
-            className="w-10 h-10 rounded-lg bg-gold text-primary-foreground flex items-center justify-center hover:bg-yellow-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+            className="w-9 h-9 rounded-lg bg-gold flex items-center justify-center text-primary-foreground hover:bg-yellow-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
           >
             <Icon name="Send" size={15} />
           </button>
         </div>
-        <div className="text-xs text-muted-foreground mt-2 text-center hidden sm:block">
-          Enter — отправить &nbsp;•&nbsp; Shift+Enter — перенос строки
-        </div>
       </div>
+
+      <style>{`
+        @keyframes marquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-marquee {
+          animation: marquee 30s linear infinite;
+        }
+        .animate-marquee:hover {
+          animation-play-state: paused;
+        }
+      `}</style>
     </div>
   );
 }
