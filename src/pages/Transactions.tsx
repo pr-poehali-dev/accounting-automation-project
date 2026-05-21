@@ -123,6 +123,15 @@ export default function Transactions() {
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Поиск..."
               className="w-full bg-secondary border border-border rounded px-3 py-2 pl-8 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
           </div>
+          <button
+            onClick={() => {
+              const url = api.exportUrl({ type: "transactions", date_from: dateFrom, date_to: dateTo, category: cat !== "Все" ? cat : undefined });
+              const a = document.createElement("a"); a.href = url; a.download = "операции.csv"; a.click();
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded border border-border text-sm text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors whitespace-nowrap">
+            <Icon name="Download" size={14} />
+            <span className="hidden sm:inline">CSV</span>
+          </button>
           <button onClick={openCreate}
             className="flex items-center gap-1.5 px-3 py-2 rounded bg-gold text-primary-foreground text-sm font-medium hover:bg-yellow-500 transition-colors whitespace-nowrap">
             <Icon name="Plus" size={15} />

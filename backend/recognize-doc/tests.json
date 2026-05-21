@@ -1,0 +1,19 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "POST no image (text fallback)",
+      "method": "POST",
+      "path": "/",
+      "body": {"file_name": "invoice_test.pdf"},
+      "expectedStatus": 200,
+      "expectedBody": {"doc_type": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

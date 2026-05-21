@@ -4,6 +4,8 @@ const URLS = {
   taxReports: "https://functions.poehali.dev/d6031486-b133-49f5-ab9c-8dae0492a797",
   aiSettings: "https://functions.poehali.dev/2d22aebf-09ca-46d6-98b1-a36a7556d511",
   aiChat: "https://functions.poehali.dev/1700fcd4-35b3-4a49-8472-292f760d2f96",
+  recognizeDoc: "https://functions.poehali.dev/912d2561-eabf-42bf-9a5f-29747a113c4e",
+  exportReport: "https://functions.poehali.dev/3ae9ddec-fe7b-4b28-be0b-6889bd9cfcd6",
 };
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -141,6 +143,22 @@ export const api = {
         body: JSON.stringify({ messages, model }),
       }),
   },
+
+  // ─── Recognize document ─────────────────────────────────
+  recognizeDoc: (params: { image_b64?: string; mime_type?: string; file_name?: string }) =>
+    request<RecognizeResult>(URLS.recognizeDoc, {
+      method: "POST",
+      body: JSON.stringify(params),
+    }),
+
+  // ─── Export / Download ──────────────────────────────────
+  exportUrl: (params: { type: "transactions" | "tax"; date_from?: string; date_to?: string; category?: string }) => {
+    const qs = new URLSearchParams({ type: params.type });
+    if (params.date_from) qs.set("date_from", params.date_from);
+    if (params.date_to) qs.set("date_to", params.date_to);
+    if (params.category) qs.set("category", params.category);
+    return `${URLS.exportReport}?${qs.toString()}`;
+  },
 };
 
 // Types
@@ -176,6 +194,18 @@ export interface AiSettings {
   api_key_set?: boolean;
   api_key_masked?: string;
   updated_at?: string;
+}
+
+export interface RecognizeResult {
+  doc_type: string;
+  counterparty: string | null;
+  inn: string | null;
+  date: string | null;
+  amount: number | null;
+  amount_str: string | null;
+  description: string | null;
+  category: string;
+  error?: string;
 }
 
 export const fmt = (n: number) =>
