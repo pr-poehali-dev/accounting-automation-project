@@ -121,11 +121,16 @@ export const api = {
     get: () =>
       request<{ settings: AiSettings }>(URLS.aiSettings),
 
-    update: (data: Partial<AiSettings>) =>
+    update: (data: Partial<AiSettings> & { api_key?: string }) =>
       request<{ settings: AiSettings }>(URLS.aiSettings, {
         method: "PUT",
         body: JSON.stringify(data),
       }),
+
+    testConnection: () =>
+      request<{ ok: boolean; error?: string; status?: number }>(
+        `${URLS.aiSettings}?action=test`
+      ),
   },
 
   // ─── AI Chat ────────────────────────────────────────────
@@ -168,6 +173,8 @@ export interface AiSettings {
   max_tokens: number;
   temperature: number;
   system_prompt: string;
+  api_key_set?: boolean;
+  api_key_masked?: string;
   updated_at?: string;
 }
 

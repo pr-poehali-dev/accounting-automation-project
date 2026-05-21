@@ -32,11 +32,17 @@ export default function AdminSettings() {
     max_tokens: 4096,
     temperature: 0.3,
     system_prompt: "Ты финансовый ИИ-ассистент для B2B компании. Отвечай профессионально, кратко и по делу. Форматируй суммы в рублях.",
+    api_key_set: false,
+    api_key_masked: "",
   });
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [showKey, setShowKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
 
   useEffect(() => {
     api.aiSettings.get()
@@ -48,15 +54,43 @@ export default function AdminSettings() {
     setSaving(true);
     setSaved(false);
     setSaveError("");
+    setTestResult(null);
     try {
-      const res = await api.aiSettings.update(settings);
+      const payload: Parameters<typeof api.aiSettings.update>[0] = {
+        selected_model: settings.selected_model,
+        max_tokens: settings.max_tokens,
+        temperature: settings.temperature,
+        system_prompt: settings.system_prompt,
+      };
+      if (apiKeyInput.trim()) {
+        payload.api_key = apiKeyInput.trim();
+      }
+      const res = await api.aiSettings.update(payload);
       setSettings(res.settings);
+      if (apiKeyInput.trim()) setApiKeyInput("");
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Ошибка сохранения");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    // Если есть несохранённый ключ — сначала сохраним
+    if (apiKeyInput.trim()) {
+      await handleSave();
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await api.aiSettings.testConnection();
+      setTestResult(res);
+    } catch (e) {
+      setTestResult({ ok: false, error: e instanceof Error ? e.message : "Ошибка подключения" });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -76,8 +110,11 @@ export default function AdminSettings() {
     );
   }
 
+  const currentModel = models.find((m) => m.id === settings.selected_model);
+
   return (
     <div className="animate-fade-in w-full max-w-3xl space-y-4">
+
       {/* Model selection */}
       <div className="card-fin p-4 sm:p-5">
         <div className="text-xs uppercase tracking-widest text-muted-foreground mb-4 gold-line pl-3">Выбор модели ИИ</div>
@@ -94,7 +131,9 @@ export default function AdminSettings() {
                       <div className="flex items-center justify-between mb-0.5">
                         <span className="text-sm font-medium flex items-center gap-2">
                           {m.name}
-                          {m.recommended && <span className="text-xs bg-gold/20 text-gold px-1.5 py-0.5 rounded font-mono-fin">Рекомендуем</span>}
+                          {m.recommended && (
+                            <span className="text-xs bg-gold/20 text-gold px-1.5 py-0.5 rounded font-mono-fin">Рекомендуем</span>
+                          )}
                         </span>
                         {settings.selected_model === id && <Icon name="CheckCircle" size={14} className="text-gold flex-shrink-0" />}
                       </div>
@@ -108,23 +147,78 @@ export default function AdminSettings() {
         </div>
       </div>
 
-      {/* API connection */}
+      {/* API Key + Test */}
       <div className="card-fin p-4 sm:p-5">
         <div className="text-xs uppercase tracking-widest text-muted-foreground mb-4 gold-line pl-3">Подключение к API</div>
         <div className="space-y-3">
+
+          {/* API Key field */}
           <div>
-            <label className="text-xs text-muted-foreground block mb-1.5">API Ключ</label>
-            <div className="relative">
-              <input type="password" value="●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●●" readOnly
-                className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none" />
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs text-muted-foreground">
+                API Ключ
+                {currentModel && (
+                  <span className="ml-2 text-muted-foreground/60">для {currentModel.provider}</span>
+                )}
+              </label>
+              {settings.api_key_set && !apiKeyInput && (
+                <span className="flex items-center gap-1 text-xs text-positive">
+                  <Icon name="CheckCircle" size={11} /> Ключ сохранён
+                </span>
+              )}
             </div>
-            <div className="text-xs text-muted-foreground mt-1">Ключ хранится в защищённом хранилище сервера</div>
+            <div className="relative">
+              <input
+                type={showKey ? "text" : "password"}
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                placeholder={
+                  settings.api_key_masked
+                    ? settings.api_key_masked
+                    : "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                }
+                className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-gold pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Icon name={showKey ? "EyeOff" : "Eye"} size={15} />
+              </button>
+            </div>
+            <div className="text-xs text-muted-foreground mt-1.5">
+              {settings.api_key_set && !apiKeyInput
+                ? "Введите новый ключ чтобы заменить сохранённый"
+                : "Ключ сохраняется в защищённом хранилище сервера, не в браузере"}
+            </div>
           </div>
+
+          {/* Endpoint (read-only info) */}
           <div>
             <label className="text-xs text-muted-foreground block mb-1.5">API Endpoint</label>
-            <input value={endpointByModel[settings.selected_model] ?? "https://api.openai.com/v1"} readOnly
-              className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-muted-foreground focus:outline-none" />
+            <input
+              value={endpointByModel[settings.selected_model] ?? "https://api.openai.com/v1"}
+              readOnly
+              className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-muted-foreground focus:outline-none"
+            />
           </div>
+
+          {/* Test connection result */}
+          {testResult && (
+            <div className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm animate-fade-in ${
+              testResult.ok
+                ? "bg-green-900/20 border-green-900/30 text-positive"
+                : "bg-red-900/20 border-red-900/30 text-negative"
+            }`}>
+              <Icon name={testResult.ok ? "CheckCircle" : "AlertCircle"} size={16} className="flex-shrink-0 mt-0.5" />
+              <div>
+                {testResult.ok
+                  ? <>Подключение успешно. Модель <strong>{currentModel?.name}</strong> отвечает.</>
+                  : <>{testResult.error || "Не удалось подключиться"}</>}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -134,18 +228,24 @@ export default function AdminSettings() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="text-xs text-muted-foreground block mb-1.5">Максимум токенов</label>
-            <input type="number" value={settings.max_tokens}
+            <input
+              type="number"
+              value={settings.max_tokens}
               onChange={(e) => setSettings((s) => ({ ...s, max_tokens: Number(e.target.value) }))}
-              className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
+              className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none focus:ring-1 focus:ring-gold"
+            />
           </div>
           <div>
             <label className="text-xs text-muted-foreground flex items-center justify-between mb-1.5">
               <span>Температура</span>
               <span className="font-mono-fin text-gold">{settings.temperature}</span>
             </label>
-            <input type="range" min="0" max="1" step="0.1" value={settings.temperature}
+            <input
+              type="range" min="0" max="1" step="0.1"
+              value={settings.temperature}
               onChange={(e) => setSettings((s) => ({ ...s, temperature: Number(e.target.value) }))}
-              className="w-full accent-yellow-500" />
+              className="w-full accent-yellow-500"
+            />
             <div className="flex justify-between text-xs text-muted-foreground mt-1">
               <span>Точно</span><span>Творчески</span>
             </div>
@@ -156,17 +256,38 @@ export default function AdminSettings() {
       {/* System prompt */}
       <div className="card-fin p-4 sm:p-5">
         <div className="text-xs uppercase tracking-widest text-muted-foreground mb-4 gold-line pl-3">Системный промпт</div>
-        <textarea rows={4} value={settings.system_prompt}
+        <textarea
+          rows={4}
+          value={settings.system_prompt}
           onChange={(e) => setSettings((s) => ({ ...s, system_prompt: e.target.value }))}
-          className="w-full bg-secondary border border-border rounded px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold resize-none leading-relaxed" />
+          className="w-full bg-secondary border border-border rounded px-4 py-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold resize-none leading-relaxed"
+        />
       </div>
 
+      {/* Action buttons */}
       <div className="flex flex-wrap items-center gap-3 pb-4">
-        <button onClick={handleSave} disabled={saving}
-          className="px-5 py-2.5 bg-gold text-primary-foreground rounded text-sm font-medium hover:bg-yellow-500 transition-colors flex items-center gap-2 disabled:opacity-50">
-          {saving ? <div className="w-4 h-4 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" /> : <Icon name="Save" size={15} />}
-          Сохранить настройки
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-5 py-2.5 bg-gold text-primary-foreground rounded text-sm font-medium hover:bg-yellow-500 transition-colors flex items-center gap-2 disabled:opacity-50"
+        >
+          {saving
+            ? <div className="w-4 h-4 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
+            : <Icon name="Save" size={15} />}
+          Сохранить
         </button>
+
+        <button
+          onClick={handleTest}
+          disabled={testing || saving}
+          className="px-4 py-2.5 border border-border rounded text-sm text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors flex items-center gap-2 disabled:opacity-50"
+        >
+          {testing
+            ? <div className="w-4 h-4 rounded-full border-2 border-muted-foreground border-t-transparent animate-spin" />
+            : <Icon name="Wifi" size={15} />}
+          Проверить подключение
+        </button>
+
         {saved && (
           <span className="flex items-center gap-1.5 text-xs text-positive animate-fade-in">
             <Icon name="CheckCircle" size={13} /> Сохранено

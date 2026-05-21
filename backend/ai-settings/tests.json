@@ -15,12 +15,20 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "PUT update model",
+      "name": "PUT update model and key",
       "method": "PUT",
       "path": "/",
-      "body": {"selected_model": "deepseek-chat", "temperature": 0.3},
+      "body": {"selected_model": "deepseek-chat", "temperature": 0.3, "api_key": "sk-test-key"},
       "expectedStatus": 200,
-      "expectedBody": {"settings": {"selected_model": "string"}},
+      "expectedBody": {"settings": {"api_key_set": true}},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET test connection (no key)",
+      "method": "GET",
+      "path": "/?action=test",
+      "expectedStatus": 200,
+      "expectedBody": {"ok": false},
       "bodyMatcher": "partial"
     }
   ]
