@@ -104,6 +104,11 @@ export default function TaxReports() {
     downloadFromUrl(api.exportUrl({ type, date_from: dateFrom, date_to: dateTo }), filename);
   };
 
+  const handleDownloadPdf = (dateFrom: string, dateTo: string, name: string) => {
+    const filename = `Otchet_IP_${name.replace(/\s+/g, "_")}.pdf`;
+    downloadFromUrl(api.pdfUrl({ date_from: dateFrom, date_to: dateTo, taxable_only: true }), filename);
+  };
+
   const handleDelete = async (id: number) => {
     if (!confirm("Удалить отчёт из архива?")) return;
     await api.taxReports.delete(id);
@@ -187,7 +192,11 @@ export default function TaxReports() {
               : <><Icon name="BarChart2" size={15} />Сформировать и сохранить</>}
           </button>
 
-          {/* Quick download buttons */}
+          {/* Quick download: PDF + CSV */}
+          <button onClick={() => handleDownloadPdf(curFrom, curTo, getPeriodDates().name)}
+            className="w-full py-2.5 border border-gold/40 text-gold rounded text-sm font-medium hover:bg-gold/10 transition-colors flex items-center justify-center gap-2 mb-2">
+            <Icon name="FileDown" size={15} /> Скачать PDF для налоговой
+          </button>
           <div className="flex gap-2">
             <button onClick={() => handleDownloadDirect(curFrom, curTo, "операции", "transactions")}
               className="flex-1 py-2 border border-border rounded text-xs text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors flex items-center justify-center gap-1.5">
@@ -202,14 +211,18 @@ export default function TaxReports() {
           {generated && (
             <div className="mt-3 p-3 rounded-lg bg-green-900/20 border border-green-900/30 text-positive text-xs animate-fade-in space-y-2">
               <div className="flex items-center gap-2"><Icon name="CheckCircle" size={14} /> Отчёт сохранён в архив</div>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-3 gap-1.5">
+                <button onClick={() => handleDownloadPdf(generated.dateFrom, generated.dateTo, generated.name)}
+                  className="py-1.5 bg-gold/20 text-gold border border-gold/30 rounded text-xs flex items-center justify-center gap-1 font-medium">
+                  <Icon name="FileDown" size={12} /> PDF
+                </button>
                 <button onClick={() => handleDownloadDirect(generated.dateFrom, generated.dateTo, generated.name, "transactions")}
-                  className="flex-1 py-1.5 bg-positive/20 text-positive border border-positive/30 rounded text-xs flex items-center justify-center gap-1">
-                  <Icon name="Download" size={12} /> Операции
+                  className="py-1.5 bg-positive/20 text-positive border border-positive/30 rounded text-xs flex items-center justify-center gap-1">
+                  <Icon name="Download" size={12} /> CSV
                 </button>
                 <button onClick={() => handleDownloadDirect(generated.dateFrom, generated.dateTo, generated.name, "tax")}
-                  className="flex-1 py-1.5 bg-positive/20 text-positive border border-positive/30 rounded text-xs flex items-center justify-center gap-1">
-                  <Icon name="Download" size={12} /> Налоговый
+                  className="py-1.5 bg-positive/20 text-positive border border-positive/30 rounded text-xs flex items-center justify-center gap-1">
+                  <Icon name="Download" size={12} /> Налог
                 </button>
               </div>
             </div>
@@ -252,7 +265,12 @@ export default function TaxReports() {
                         <div className="text-sm font-medium truncate">{r.name}</div>
                         <div className="text-xs text-muted-foreground mt-0.5">{r.period} • {fDate(r.created_at)}</div>
                         {/* Download buttons */}
-                        <div className="flex gap-2 mt-2">
+                        <div className="flex gap-1.5 mt-2 flex-wrap">
+                          <button
+                            onClick={() => handleDownloadPdf(df, dt, r.name)}
+                            className="flex items-center gap-1 text-xs px-2.5 py-1 rounded border border-gold/40 text-gold hover:bg-gold/10 transition-colors font-medium">
+                            <Icon name="FileDown" size={12} /> PDF
+                          </button>
                           <button
                             onClick={() => handleDownload(r, "tax")}
                             disabled={downloading === r.id}
@@ -260,7 +278,7 @@ export default function TaxReports() {
                             {downloading === r.id
                               ? <div className="w-3 h-3 rounded-full border border-muted-foreground border-t-transparent animate-spin" />
                               : <Icon name="Download" size={12} />}
-                            Налоговый
+                            CSV налог
                           </button>
                           <button
                             onClick={() => handleDownload(r, "transactions")}

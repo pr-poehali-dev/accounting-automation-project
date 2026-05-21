@@ -1,4 +1,8 @@
 {
+  "upload-doc": "https://functions.poehali.dev/cc362dea-3988-4a28-a94e-166b527ac26c",
+  "db-migrate": "https://functions.poehali.dev/cf3af67b-397c-498e-a95d-8265086d8fff",
+  "generate-pdf": "https://functions.poehali.dev/fff58902-afa3-4eb6-8403-6975c2c5ce0b",
+  "s3-settings": "https://functions.poehali.dev/994a3fe5-ea96-4bca-bad7-09a990b48212",
   "recognize-doc": "https://functions.poehali.dev/912d2561-eabf-42bf-9a5f-29747a113c4e",
   "export-report": "https://functions.poehali.dev/3ae9ddec-fe7b-4b28-be0b-6889bd9cfcd6",
   "documents": "https://functions.poehali.dev/ab114954-abef-4fbd-aa0f-6200ccdf9984",

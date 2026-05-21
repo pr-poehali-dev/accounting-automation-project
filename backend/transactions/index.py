@@ -120,13 +120,13 @@ def handler(event: dict, context) -> dict:
 
             where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
             cur.execute(f"""
-                SELECT id, date, description, category, amount, status, created_at
+                SELECT id, date, description, category, amount, status, is_taxable, document_id, created_at
                 FROM {SCHEMA}.transactions
                 {where}
                 ORDER BY date DESC, id DESC
                 LIMIT 200
             """, params)
-            cols = ["id","date","description","category","amount","status","created_at"]
+            cols = ["id","date","description","category","amount","status","is_taxable","document_id","created_at"]
             rows = [dict(zip(cols, r)) for r in cur.fetchall()]
             for r in rows:
                 r["amount"] = float(r["amount"])
@@ -135,19 +135,23 @@ def handler(event: dict, context) -> dict:
         # POST / — create
         if method == "POST":
             body = json.loads(event.get("body") or "{}")
+            is_taxable = body.get("is_taxable", True)
+            document_id = body.get("document_id")
             cur.execute(f"""
-                INSERT INTO {SCHEMA}.transactions (date, description, category, amount, status)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id, date, description, category, amount, status, created_at
+                INSERT INTO {SCHEMA}.transactions (date, description, category, amount, status, is_taxable, document_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, date, description, category, amount, status, is_taxable, document_id, created_at
             """, (
                 body.get("date", str(date.today())),
                 body["description"],
                 body.get("category", "Прочее"),
                 float(body["amount"]),
                 body.get("status", "Выполнено"),
+                is_taxable,
+                document_id,
             ))
             conn.commit()
-            cols = ["id","date","description","category","amount","status","created_at"]
+            cols = ["id","date","description","category","amount","status","is_taxable","document_id","created_at"]
             row = dict(zip(cols, cur.fetchone()))
             row["amount"] = float(row["amount"])
             return resp(201, {"transaction": row})
@@ -160,7 +164,7 @@ def handler(event: dict, context) -> dict:
             body = json.loads(event.get("body") or "{}")
             fields = []
             params = []
-            for f in ["date", "description", "category", "amount", "status"]:
+            for f in ["date", "description", "category", "amount", "status", "is_taxable", "document_id"]:
                 if f in body:
                     fields.append(f"{f} = %s")
                     params.append(body[f])

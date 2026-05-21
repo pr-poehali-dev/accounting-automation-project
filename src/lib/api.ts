@@ -6,6 +6,10 @@ const URLS = {
   aiChat: "https://functions.poehali.dev/1700fcd4-35b3-4a49-8472-292f760d2f96",
   recognizeDoc: "https://functions.poehali.dev/912d2561-eabf-42bf-9a5f-29747a113c4e",
   exportReport: "https://functions.poehali.dev/3ae9ddec-fe7b-4b28-be0b-6889bd9cfcd6",
+  s3Settings: "https://functions.poehali.dev/994a3fe5-ea96-4bca-bad7-09a990b48212",
+  uploadDoc: "https://functions.poehali.dev/cc362dea-3988-4a28-a94e-166b527ac26c",
+  generatePdf: "https://functions.poehali.dev/fff58902-afa3-4eb6-8403-6975c2c5ce0b",
+  dbMigrate: "https://functions.poehali.dev/cf3af67b-397c-498e-a95d-8265086d8fff",
 };
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -26,6 +30,8 @@ export interface Transaction {
   category: string;
   amount: number;
   status: string;
+  is_taxable?: boolean;
+  document_id?: number | null;
   created_at?: string;
 }
 
@@ -159,6 +165,33 @@ export const api = {
     if (params.category) qs.set("category", params.category);
     return `${URLS.exportReport}?${qs.toString()}`;
   },
+
+  // ─── PDF Report ─────────────────────────────────────────
+  pdfUrl: (params: { date_from?: string; date_to?: string; taxable_only?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (params.date_from) qs.set("date_from", params.date_from);
+    if (params.date_to) qs.set("date_to", params.date_to);
+    qs.set("taxable_only", params.taxable_only !== false ? "1" : "0");
+    return `${URLS.generatePdf}?${qs.toString()}`;
+  },
+
+  // ─── S3 Settings ────────────────────────────────────────
+  s3Settings: {
+    get: () => request<{ settings: S3Settings }>(URLS.s3Settings),
+    update: (data: Partial<S3Settings> & { secret_key?: string }) =>
+      request<{ ok: boolean; settings: S3Settings }>(URLS.s3Settings, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }),
+    test: () => request<{ ok: boolean; error?: string; message?: string }>(`${URLS.s3Settings}?action=test`),
+  },
+
+  // ─── Upload document to S3 ──────────────────────────────
+  uploadDoc: (params: { file_b64: string; file_name: string; mime_type: string; doc_id?: number }) =>
+    request<{ ok: boolean; url: string; key: string }>(URLS.uploadDoc, {
+      method: "POST",
+      body: JSON.stringify(params),
+    }),
 };
 
 // Types
@@ -194,6 +227,14 @@ export interface AiSettings {
   api_key_set?: boolean;
   api_key_masked?: string;
   updated_at?: string;
+}
+
+export interface S3Settings {
+  bucket_name: string;
+  endpoint_url: string;
+  access_key: string;
+  secret_key_masked?: string;
+  configured?: boolean;
 }
 
 export interface RecognizeResult {

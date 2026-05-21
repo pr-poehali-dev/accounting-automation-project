@@ -1,0 +1,1 @@
+{"tests": [{"name": "OPTIONS", "method": "OPTIONS", "path": "/", "expectedStatus": 200}, {"name": "GET run migrations", "method": "GET", "path": "/", "expectedStatus": 200, "expectedBody": {"done": true}, "bodyMatcher": "partial"}]}

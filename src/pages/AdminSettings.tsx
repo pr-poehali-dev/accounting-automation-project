@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { api, type AiSettings } from "@/lib/api";
+import { api, type AiSettings, type S3Settings } from "@/lib/api";
 
 const models = [
   { id: "deepseek-chat", name: "DeepSeek V3", provider: "DeepSeek", desc: "Мощная модель, очень доступная цена", recommended: true },
@@ -44,11 +44,59 @@ export default function AdminSettings() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
 
+  // S3
+  const [s3, setS3] = useState<S3Settings>({ bucket_name: "", endpoint_url: "https://s3.regru.cloud", access_key: "", secret_key_masked: "" });
+  const [s3SecretInput, setS3SecretInput] = useState("");
+  const [showS3Secret, setShowS3Secret] = useState(false);
+  const [s3Saving, setS3Saving] = useState(false);
+  const [s3Saved, setS3Saved] = useState(false);
+  const [s3SaveError, setS3SaveError] = useState("");
+  const [s3Testing, setS3Testing] = useState(false);
+  const [s3TestResult, setS3TestResult] = useState<{ ok: boolean; error?: string; message?: string } | null>(null);
+
   useEffect(() => {
-    api.aiSettings.get()
-      .then((res) => setSettings(res.settings))
-      .finally(() => setLoading(false));
+    Promise.all([
+      api.aiSettings.get(),
+      api.s3Settings.get(),
+    ]).then(([aiRes, s3Res]) => {
+      setSettings(aiRes.settings);
+      setS3(s3Res.settings);
+    }).finally(() => setLoading(false));
   }, []);
+
+  const handleS3Save = async () => {
+    setS3Saving(true); setS3Saved(false); setS3SaveError(""); setS3TestResult(null);
+    try {
+      const payload: Parameters<typeof api.s3Settings.update>[0] = {
+        bucket_name: s3.bucket_name,
+        endpoint_url: s3.endpoint_url,
+        access_key: s3.access_key,
+      };
+      if (s3SecretInput.trim()) payload.secret_key = s3SecretInput.trim();
+      const res = await api.s3Settings.update(payload);
+      setS3(res.settings);
+      if (s3SecretInput.trim()) setS3SecretInput("");
+      setS3Saved(true);
+      setTimeout(() => setS3Saved(false), 3000);
+    } catch (e) {
+      setS3SaveError(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setS3Saving(false);
+    }
+  };
+
+  const handleS3Test = async () => {
+    if (s3SecretInput.trim()) await handleS3Save();
+    setS3Testing(true); setS3TestResult(null);
+    try {
+      const res = await api.s3Settings.test();
+      setS3TestResult(res);
+    } catch (e) {
+      setS3TestResult({ ok: false, error: e instanceof Error ? e.message : "Ошибка" });
+    } finally {
+      setS3Testing(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -264,40 +312,90 @@ export default function AdminSettings() {
         />
       </div>
 
-      {/* Action buttons */}
+      {/* Action buttons AI */}
+      <div className="flex flex-wrap items-center gap-3 pb-2">
+        <button onClick={handleSave} disabled={saving}
+          className="px-5 py-2.5 bg-gold text-primary-foreground rounded text-sm font-medium hover:bg-yellow-500 transition-colors flex items-center gap-2 disabled:opacity-50">
+          {saving ? <div className="w-4 h-4 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" /> : <Icon name="Save" size={15} />}
+          Сохранить ИИ
+        </button>
+        <button onClick={handleTest} disabled={testing || saving}
+          className="px-4 py-2.5 border border-border rounded text-sm text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors flex items-center gap-2 disabled:opacity-50">
+          {testing ? <div className="w-4 h-4 rounded-full border-2 border-muted-foreground border-t-transparent animate-spin" /> : <Icon name="Wifi" size={15} />}
+          Проверить связь с ИИ
+        </button>
+        {saved && <span className="flex items-center gap-1.5 text-xs text-positive animate-fade-in"><Icon name="CheckCircle" size={13} /> Сохранено</span>}
+        {saveError && <span className="flex items-center gap-1.5 text-xs text-negative animate-fade-in"><Icon name="AlertCircle" size={13} /> {saveError}</span>}
+      </div>
+
+      {/* ═══════════ БЛОК S3 ═══════════ */}
+      <div className="card-fin p-4 sm:p-5">
+        <div className="text-xs uppercase tracking-widest text-muted-foreground mb-1 gold-line pl-3">Хранилище Reg.ru S3</div>
+        <div className="text-xs text-muted-foreground mb-4 pl-3">Для сохранения фото документов и формирования PDF-отчётов</div>
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1.5">Имя бакета (Bucket Name)</label>
+              <input value={s3.bucket_name} onChange={(e) => setS3((s) => ({ ...s, bucket_name: e.target.value }))}
+                placeholder="strimbazar"
+                className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1.5">Endpoint URL</label>
+              <input value={s3.endpoint_url} onChange={(e) => setS3((s) => ({ ...s, endpoint_url: e.target.value }))}
+                placeholder="https://s3.regru.cloud"
+                className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground block mb-1.5">Access Key ID</label>
+            <input value={s3.access_key} onChange={(e) => setS3((s) => ({ ...s, access_key: e.target.value }))}
+              placeholder="Открытый ключ из личного кабинета Рег.ру"
+              className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs text-muted-foreground">Secret Access Key</label>
+              {s3.secret_key_masked && !s3SecretInput && (
+                <span className="flex items-center gap-1 text-xs text-positive"><Icon name="CheckCircle" size={11} /> Ключ сохранён</span>
+              )}
+            </div>
+            <div className="relative">
+              <input type={showS3Secret ? "text" : "password"} value={s3SecretInput}
+                onChange={(e) => setS3SecretInput(e.target.value)}
+                placeholder={s3.secret_key_masked || "Секретный ключ (генерируется один раз)"}
+                className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-gold pr-10" />
+              <button type="button" onClick={() => setShowS3Secret((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                <Icon name={showS3Secret ? "EyeOff" : "Eye"} size={15} />
+              </button>
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">Ключ хранится в защищённом хранилище сервера</div>
+          </div>
+
+          {s3TestResult && (
+            <div className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm animate-fade-in ${s3TestResult.ok ? "bg-green-900/20 border-green-900/30 text-positive" : "bg-red-900/20 border-red-900/30 text-negative"}`}>
+              <Icon name={s3TestResult.ok ? "CheckCircle" : "AlertCircle"} size={16} className="flex-shrink-0 mt-0.5" />
+              <div>{s3TestResult.ok ? (s3TestResult.message || "Доступ к Рег.облаку настроен успешно!") : (s3TestResult.error || "Ошибка подключения")}</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* S3 action buttons */}
       <div className="flex flex-wrap items-center gap-3 pb-4">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-5 py-2.5 bg-gold text-primary-foreground rounded text-sm font-medium hover:bg-yellow-500 transition-colors flex items-center gap-2 disabled:opacity-50"
-        >
-          {saving
-            ? <div className="w-4 h-4 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" />
-            : <Icon name="Save" size={15} />}
-          Сохранить
+        <button onClick={handleS3Save} disabled={s3Saving}
+          className="px-5 py-2.5 bg-gold text-primary-foreground rounded text-sm font-medium hover:bg-yellow-500 transition-colors flex items-center gap-2 disabled:opacity-50">
+          {s3Saving ? <div className="w-4 h-4 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" /> : <Icon name="Save" size={15} />}
+          Сохранить S3
         </button>
-
-        <button
-          onClick={handleTest}
-          disabled={testing || saving}
-          className="px-4 py-2.5 border border-border rounded text-sm text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors flex items-center gap-2 disabled:opacity-50"
-        >
-          {testing
-            ? <div className="w-4 h-4 rounded-full border-2 border-muted-foreground border-t-transparent animate-spin" />
-            : <Icon name="Wifi" size={15} />}
-          Проверить подключение
+        <button onClick={handleS3Test} disabled={s3Testing || s3Saving}
+          className="px-4 py-2.5 border border-border rounded text-sm text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors flex items-center gap-2 disabled:opacity-50">
+          {s3Testing ? <div className="w-4 h-4 rounded-full border-2 border-muted-foreground border-t-transparent animate-spin" /> : <Icon name="HardDrive" size={15} />}
+          Проверить связь S3
         </button>
-
-        {saved && (
-          <span className="flex items-center gap-1.5 text-xs text-positive animate-fade-in">
-            <Icon name="CheckCircle" size={13} /> Сохранено
-          </span>
-        )}
-        {saveError && (
-          <span className="flex items-center gap-1.5 text-xs text-negative animate-fade-in">
-            <Icon name="AlertCircle" size={13} /> {saveError}
-          </span>
-        )}
+        {s3Saved && <span className="flex items-center gap-1.5 text-xs text-positive animate-fade-in"><Icon name="CheckCircle" size={13} /> Сохранено</span>}
+        {s3SaveError && <span className="flex items-center gap-1.5 text-xs text-negative animate-fade-in"><Icon name="AlertCircle" size={13} /> {s3SaveError}</span>}
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ interface FormState {
   amount: string;
   type: "income" | "expense";
   status: string;
+  is_taxable: boolean;
 }
 
 const emptyForm = (): FormState => ({
@@ -21,6 +22,7 @@ const emptyForm = (): FormState => ({
   amount: "",
   type: "expense",
   status: "Выполнено",
+  is_taxable: true,
 });
 
 export default function Transactions() {
@@ -65,6 +67,7 @@ export default function Transactions() {
       amount: String(Math.abs(tx.amount)),
       type: tx.amount >= 0 ? "income" : "expense",
       status: tx.status,
+      is_taxable: tx.is_taxable !== false,
     });
     setError("");
     setShowForm(true);
@@ -81,11 +84,13 @@ export default function Transactions() {
         await api.transactions.update(editTx.id, {
           date: form.date, description: form.description,
           category: form.category, amount, status: form.status,
+          is_taxable: form.is_taxable,
         });
       } else {
         await api.transactions.create({
           date: form.date, description: form.description,
           category: form.category, amount, status: form.status,
+          is_taxable: form.is_taxable,
         });
       }
       setShowForm(false);
@@ -299,6 +304,18 @@ export default function Transactions() {
                 </div>
               </div>
             </div>
+
+            {/* is_taxable toggle */}
+            <button type="button" onClick={() => setForm((f) => ({ ...f, is_taxable: !f.is_taxable }))}
+              className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${form.is_taxable ? "border-gold/40 bg-gold/5" : "border-border"}`}>
+              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${form.is_taxable ? "border-gold bg-gold" : "border-border"}`}>
+                {form.is_taxable && <Icon name="Check" size={12} className="text-primary-foreground" />}
+              </div>
+              <div>
+                <div className="text-sm font-medium">Учитывать в налоговом отчёте</div>
+                <div className="text-xs text-muted-foreground">Операция попадёт в PDF для налоговой</div>
+              </div>
+            </button>
 
             {error && <div className="text-xs text-negative bg-red-900/20 border border-red-900/30 rounded px-3 py-2">{error}</div>}
 
