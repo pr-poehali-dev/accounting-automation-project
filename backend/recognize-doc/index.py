@@ -109,14 +109,29 @@ def _post_deepseek(messages: list, api_key: str, timeout: int = 55) -> str:
         return data["choices"][0]["message"]["content"]
 
 
-def call_ai(image_b64: str, mime_type: str, file_name: str, api_key: str) -> str:
-    """OCR → DeepSeek text."""
+def call_ai(image_b64: str, mime_type: str, file_name: str, api_key: str,
+            extra_images: list = None) -> str:
+    """OCR всех страниц → DeepSeek text."""
+    all_texts = []
+
     if image_b64:
-        ocr_text = extract_text_from_image(image_b64)
+        text = extract_text_from_image(image_b64)
+        all_texts.append(f"=== Страница 1 ===\n{text}")
+
+    if extra_images:
+        for idx, img in enumerate(extra_images, start=2):
+            b64 = img.get("b64", "")
+            if b64:
+                text = extract_text_from_image(b64)
+                all_texts.append(f"=== Страница {idx} ===\n{text}")
+
+    if all_texts:
+        combined = "\n\n".join(all_texts)
+        pages_label = f"{len(all_texts)} стр." if len(all_texts) > 1 else "1 стр."
         user_content = (
-            f"Имя файла: «{file_name}»\n\n"
-            f"Текст распознан из изображения (OCR):\n```\n{ocr_text[:3000]}\n```\n\n"
-            "Проанализируй и верни JSON."
+            f"Имя файла: «{file_name}» ({pages_label})\n\n"
+            f"OCR-текст всех страниц документа:\n```\n{combined[:6000]}\n```\n\n"
+            "Найди ИТОГОВУЮ сумму по всему документу. Верни JSON."
         )
     else:
         user_content = (
@@ -220,13 +235,24 @@ def handler(event: dict, context) -> dict:
             }
 
         body = json.loads(event.get("body") or "{}")
-        image_b64 = body.get("image_b64", "")
-        mime_type = body.get("mime_type", "image/jpeg")
+        # Поддерживаем как одиночное изображение, так и массив images[]
+        images_list = body.get("images", [])  # [{b64, mime}, ...]
+        if images_list:
+            # Мультистраничный режим: первая страница — основная
+            first = images_list[0]
+            image_b64 = first.get("b64", "")
+            mime_type = first.get("mime", "image/jpeg")
+            extra_images = images_list[1:] if len(images_list) > 1 else []
+        else:
+            image_b64 = body.get("image_b64", "")
+            mime_type = body.get("mime_type", "image/jpeg")
+            extra_images = []
+
         file_name = body.get("file_name", "document")
         doc_id = body.get("doc_id")
         auto_create_tx = body.get("auto_create_tx", True)
 
-        raw = call_ai(image_b64, mime_type, file_name, api_key)
+        raw = call_ai(image_b64, mime_type, file_name, api_key, extra_images)
         fields = parse_response(raw)
 
         amount = clean_amount(fields.get("amount"))

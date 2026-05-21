@@ -49,6 +49,13 @@ interface DocWithRecognition extends DocRecord {
   previewUrl?: string;
 }
 
+interface PageItem {
+  file: File;
+  previewUrl: string;
+  b64: string;
+  mime: string;
+}
+
 export default function Documents() {
   const [docs, setDocs] = useState<DocWithRecognition[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +68,12 @@ export default function Documents() {
   const [txSaved, setTxSaved] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
+  const multiCameraRef = useRef<HTMLInputElement>(null);
+
+  // Мультистраничный режим
+  const [showMultiModal, setShowMultiModal] = useState(false);
+  const [pages, setPages] = useState<PageItem[]>([]);
+  const [multiProcessing, setMultiProcessing] = useState(false);
 
   // localStorage helpers для хранения превью между сессиями
   const savePreview = (docId: number, url: string) => {
@@ -223,29 +236,124 @@ export default function Documents() {
     }
   };
 
+  // ── Мультистраничный режим ──────────────────────────────
+  const addPageFromFile = async (file: File) => {
+    try {
+      const compressed = await compressImageToBase64(file, 1400, 0.85);
+      setPages((prev) => [...prev, { file, previewUrl: compressed.previewUrl, b64: compressed.b64, mime: compressed.mime }]);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const removePage = (idx: number) => setPages((prev) => prev.filter((_, i) => i !== idx));
+
+  const handleMultiDone = async () => {
+    if (pages.length === 0) return;
+    setMultiProcessing(true);
+    try {
+      // Создаём один документ для всего набора страниц
+      const firstName = pages[0].file.name;
+      const totalSize = pages.reduce((s, p) => s + p.file.size, 0);
+      const sizeMb = (totalSize / 1024 / 1024).toFixed(1);
+      const docName = pages.length > 1 ? `Накладная (${pages.length} стр.)` : firstName;
+
+      const res = await api.documents.create({
+        name: docName,
+        size_label: `${sizeMb} МБ`,
+        status: "processing",
+      });
+
+      const combinedPreview = pages[0].previewUrl; // первая страница как превью
+      if (combinedPreview) savePreview(res.document.id, combinedPreview);
+
+      const newDoc: DocWithRecognition = {
+        ...res.document,
+        status: "processing",
+        recognizing: true,
+        previewUrl: combinedPreview,
+      };
+      setDocs((prev) => [newDoc, ...prev]);
+      setSelected(newDoc);
+      setMobileView("detail");
+      setShowMultiModal(false);
+
+      // Отправляем все страницы
+      const images = pages.map((p) => ({ b64: p.b64, mime: p.mime }));
+      setPages([]);
+
+      await recognizeMultiPage(res.document.id, images, combinedPreview, docName);
+    } finally {
+      setMultiProcessing(false);
+    }
+  };
+
+  const recognizeMultiPage = async (
+    docId: number,
+    images: { b64: string; mime: string }[],
+    previewUrl: string | undefined,
+    fileName: string,
+  ) => {
+    setDocs((prev) => prev.map((d) => d.id === docId ? { ...d, recognizing: true, previewUrl } : d));
+    setSelected((prev) => prev?.id === docId ? { ...prev, recognizing: true, previewUrl } : prev);
+    try {
+      const result = await api.recognizeDoc({
+        images,
+        file_name: fileName,
+        doc_id: docId,
+        auto_create_tx: true,
+      });
+
+      if (!result.error) {
+        await api.documents.update(docId, {
+          status: "done",
+          rec_type: result.doc_type,
+          rec_amount: result.amount_str || (result.amount ? `₽ ${result.amount}` : undefined),
+          rec_date: result.date || undefined,
+          rec_counterparty: result.counterparty || undefined,
+          rec_inn: result.inn || undefined,
+        });
+      }
+
+      const updated = await api.documents.list();
+      const updatedDoc = updated.documents.find((d) => d.id === docId);
+      if (previewUrl) savePreview(docId, previewUrl);
+      const finalDoc = { ...(updatedDoc || {}), recognizing: false, recognition: result, previewUrl };
+      setDocs((prev) => prev.map((d) => d.id === docId ? { ...d, ...finalDoc } : d));
+      setSelected((prev) => prev?.id === docId ? { ...prev, ...finalDoc } : prev);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Ошибка распознавания";
+      await api.documents.update(docId, { status: "error" }).catch(() => {});
+      setDocs((prev) => prev.map((d) => d.id === docId ? { ...d, status: "error", recognizing: false, recognitionError: msg } : d));
+      setSelected((prev) => prev?.id === docId ? { ...prev, status: "error", recognizing: false, recognitionError: msg } : prev);
+    }
+  };
+  // ────────────────────────────────────────────────────────
+
   const selDone = selected?.status === "done" && !selected.recognizing;
 
   return (
     <div className="animate-fade-in flex flex-col gap-4">
       {/* Mobile buttons */}
       <div className="grid grid-cols-2 gap-3 lg:hidden">
-        <button onClick={() => cameraRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-2 p-5 card-fin border-2 border-dashed border-gold/40 rounded-xl text-gold active:scale-95 transition-transform">
-          <Icon name="Camera" size={28} />
+        <button onClick={() => { setPages([]); setShowMultiModal(true); }}
+          className="flex flex-col items-center justify-center gap-2 p-4 card-fin border-2 border-dashed border-gold/40 rounded-xl text-gold active:scale-95 transition-transform">
+          <Icon name="Camera" size={26} />
           <span className="text-sm font-medium">Сфотографировать</span>
-          <span className="text-xs text-muted-foreground text-center">Чек, счёт, накладная</span>
-          <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
-            onChange={(e) => e.target.files && addFiles(Array.from(e.target.files))} />
+          <span className="text-xs text-muted-foreground text-center">1 или несколько страниц</span>
         </button>
         <button onClick={() => inputRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-2 p-5 card-fin border-dashed border-border/60 rounded-xl text-muted-foreground active:scale-95 transition-transform">
-          <Icon name="Upload" size={28} />
+          className="flex flex-col items-center justify-center gap-2 p-4 card-fin border-dashed border-border/60 rounded-xl text-muted-foreground active:scale-95 transition-transform">
+          <Icon name="Upload" size={26} />
           <span className="text-sm font-medium">Загрузить файл</span>
           <span className="text-xs">PDF, JPG, PNG</span>
           <input ref={inputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png" className="hidden"
             onChange={(e) => e.target.files && addFiles(Array.from(e.target.files))} />
         </button>
       </div>
+      {/* hidden camera input for multi-page */}
+      <input ref={multiCameraRef} type="file" accept="image/*" capture="environment" className="hidden"
+        onChange={(e) => { if (e.target.files?.[0]) { addPageFromFile(e.target.files[0]); e.target.value = ""; } }} />
 
       {/* Mobile tabs */}
       <div className="flex lg:hidden gap-1 card-fin p-1 rounded-xl">
@@ -510,6 +618,81 @@ export default function Documents() {
                   ? <><Icon name="CheckCircle" size={15} />Операция создана!</>
                   : <><Icon name="Plus" size={15} />Создать расход</>}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Мультистраничный модал ═══ */}
+      {showMultiModal && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex flex-col" onClick={(e) => { if (e.target === e.currentTarget && pages.length === 0) setShowMultiModal(false); }}>
+          <div className="flex items-center justify-between px-4 pt-5 pb-3">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Сфотографировать накладную</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">Добавьте все страницы, затем нажмите «Готово»</p>
+            </div>
+            <button onClick={() => { setShowMultiModal(false); setPages([]); }}
+              className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground">
+              <Icon name="X" size={16} />
+            </button>
+          </div>
+
+          {/* Pages grid */}
+          <div className="flex-1 overflow-y-auto px-4 pb-4">
+            {pages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-48 gap-3 text-muted-foreground">
+                <Icon name="ScanLine" size={40} className="opacity-30" />
+                <p className="text-sm">Нет страниц — нажмите камеру ниже</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
+                {pages.map((p, idx) => (
+                  <div key={idx} className="relative rounded-xl overflow-hidden border border-border bg-secondary aspect-[3/4]">
+                    <img src={p.previewUrl} alt={`Страница ${idx + 1}`} className="w-full h-full object-cover" />
+                    <div className="absolute top-1.5 left-1.5 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded-md font-medium">
+                      {idx + 1}
+                    </div>
+                    <button onClick={() => removePage(idx)}
+                      className="absolute top-1.5 right-1.5 w-6 h-6 bg-red-600/90 text-white rounded-full flex items-center justify-center">
+                      <Icon name="X" size={11} />
+                    </button>
+                  </div>
+                ))}
+                {/* Add more button */}
+                <button onClick={() => multiCameraRef.current?.click()}
+                  className="aspect-[3/4] rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-gold/50 hover:text-gold transition-colors">
+                  <Icon name="Plus" size={24} />
+                  <span className="text-xs">Ещё страница</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Bottom actions */}
+          <div className="px-4 pb-6 pt-2 space-y-2 border-t border-border bg-card">
+            {pages.length === 0 ? (
+              <button onClick={() => multiCameraRef.current?.click()}
+                className="w-full py-4 bg-gold text-primary-foreground rounded-xl text-base font-semibold flex items-center justify-center gap-3 active:scale-95 transition-transform">
+                <Icon name="Camera" size={22} />
+                Сфотографировать страницу
+              </button>
+            ) : (
+              <>
+                <button onClick={() => multiCameraRef.current?.click()}
+                  className="w-full py-3 border border-border text-muted-foreground rounded-xl text-sm font-medium flex items-center justify-center gap-2 hover:border-gold/40 hover:text-foreground transition-colors">
+                  <Icon name="Plus" size={16} />
+                  Добавить ещё страницу
+                </button>
+                <button onClick={handleMultiDone} disabled={multiProcessing}
+                  className="w-full py-4 bg-gold text-primary-foreground rounded-xl text-base font-semibold flex items-center justify-center gap-3 disabled:opacity-60 active:scale-95 transition-transform">
+                  {multiProcessing
+                    ? <><div className="w-5 h-5 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" /> Отправляю ИИ...</>
+                    : <><Icon name="CheckCircle" size={22} /> Готово — {pages.length} {pages.length === 1 ? "страница" : pages.length < 5 ? "страницы" : "страниц"}</>}
+                </button>
+              </>
+            )}
+            <p className="text-center text-xs text-muted-foreground">
+              {pages.length > 0 ? `${pages.length} стр. добавлено • ИИ обработает все сразу` : "Камера откроется автоматически"}
+            </p>
           </div>
         </div>
       )}

@@ -151,7 +151,11 @@ export const api = {
   },
 
   // ─── Recognize document ─────────────────────────────────
-  recognizeDoc: (params: { image_b64?: string; mime_type?: string; file_name?: string; doc_id?: number; auto_create_tx?: boolean }) =>
+  recognizeDoc: (params: {
+    image_b64?: string; mime_type?: string; file_name?: string;
+    doc_id?: number; auto_create_tx?: boolean;
+    images?: { b64: string; mime: string }[];
+  }) =>
     request<RecognizeResult>(URLS.recognizeDoc, {
       method: "POST",
       body: JSON.stringify(params),
