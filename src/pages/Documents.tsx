@@ -168,6 +168,10 @@ export default function Documents() {
   const [showNewCat, setShowNewCat] = useState(false);
   const [newCatInput, setNewCatInput] = useState("");
 
+  // Инлайн-редактирование статьи затрат в карточке документа
+  const [editingCategory, setEditingCategory] = useState(false);
+  const [savingCategory, setSavingCategory] = useState(false);
+
   // localStorage helpers для хранения превью между сессиями
   // Сжимаем превью до меньшего размера перед сохранением (localStorage квота ~5MB)
   const savePreviewSmall = async (docId: number, dataUrl: string) => {
@@ -398,7 +402,7 @@ export default function Documents() {
     addFiles(Array.from(e.dataTransfer.files));
   };
 
-  const handleSelect = (doc: DocWithRecognition) => { setSelected(doc); setMobileView("detail"); };
+  const handleSelect = (doc: DocWithRecognition) => { setSelected(doc); setEditingCategory(false); setMobileView("detail"); };
 
   const recognizeAgain = async () => {
     if (!selected) return;
@@ -512,6 +516,25 @@ export default function Documents() {
     const updated = await api.documents.update(selected.id, { [field]: value });
     setDocs((prev) => prev.map((d) => d.id === selected.id ? { ...d, ...updated.document } : d));
     setSelected((prev) => prev ? { ...prev, ...updated.document } : prev);
+  };
+
+  const handleCategoryChange = async (newCategory: string) => {
+    if (!selected?.recognition?.transaction_id) return;
+    setSavingCategory(true);
+    try {
+      await api.transactions.update(selected.recognition.transaction_id, { category: newCategory });
+      setSelected((prev) => prev ? {
+        ...prev,
+        recognition: prev.recognition ? { ...prev.recognition, category: newCategory } : prev.recognition,
+      } : prev);
+      setDocs((prev) => prev.map((d) => d.id === selected.id ? {
+        ...d,
+        recognition: d.recognition ? { ...d.recognition, category: newCategory } : d.recognition,
+      } : d));
+    } finally {
+      setSavingCategory(false);
+      setEditingCategory(false);
+    }
   };
 
   const openCreateTx = () => {
@@ -892,8 +915,33 @@ export default function Documents() {
 
                   {selected.recognition?.category && (
                     <div className="flex items-center gap-2 pt-1">
-                      <span className="text-xs text-muted-foreground">Статья затрат:</span>
-                      <span className="text-xs bg-gold/15 text-gold px-2.5 py-1 rounded-full font-medium">{selected.recognition.category}</span>
+                      <span className="text-xs text-muted-foreground flex-shrink-0">Статья затрат:</span>
+                      {editingCategory ? (
+                        <div className="flex items-center gap-1.5 flex-1">
+                          <select
+                            autoFocus
+                            defaultValue={selected.recognition.category}
+                            disabled={savingCategory}
+                            onChange={(e) => { if (e.target.value !== "__new__") handleCategoryChange(e.target.value); }}
+                            onBlur={() => !savingCategory && setEditingCategory(false)}
+                            className="flex-1 min-w-0 bg-secondary border border-gold rounded px-2 py-1 text-xs text-foreground focus:outline-none"
+                          >
+                            {[...DEFAULT_CATEGORIES, ...customCategories].map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                          {savingCategory && <Icon name="Loader" size={12} className="animate-spin text-gold flex-shrink-0" />}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setEditingCategory(true)}
+                          className="flex items-center gap-1 text-xs bg-gold/15 hover:bg-gold/25 text-gold px-2.5 py-1 rounded-full font-medium transition-colors group"
+                          title="Нажмите чтобы изменить"
+                        >
+                          {selected.recognition.category}
+                          <Icon name="ChevronDown" size={11} className="opacity-60 group-hover:opacity-100" />
+                        </button>
+                      )}
                     </div>
                   )}
 
