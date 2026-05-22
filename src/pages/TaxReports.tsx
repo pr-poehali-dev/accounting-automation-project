@@ -222,6 +222,13 @@ export default function TaxReports() {
             className="w-full py-2.5 border border-gold/40 text-gold rounded text-sm font-medium hover:bg-gold/10 transition-colors flex items-center justify-center gap-2 mb-2">
             <Icon name="FileDown" size={15} /> Скачать PDF для налоговой
           </button>
+          <button onClick={() => {
+            const filename = `Dokumenty_IP_${getPeriodDates().name.replace(/\s+/g, "_")}.pdf`;
+            downloadFromUrl(api.pdfUrl({ date_from: curFrom, date_to: curTo, taxable_only: true, vat_rate: vatRate, mode: "docs" }), filename);
+          }}
+            className="w-full py-2.5 border border-border text-muted-foreground rounded text-sm font-medium hover:text-foreground hover:border-gold/40 transition-colors flex items-center justify-center gap-2 mb-2">
+            <Icon name="Images" size={15} /> Скачать документы PDF
+          </button>
           <div className="flex gap-2">
             <button onClick={() => handleDownloadDirect(curFrom, curTo, "операции", "transactions")}
               className="flex-1 py-2 border border-border rounded text-xs text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors flex items-center justify-center gap-1.5">

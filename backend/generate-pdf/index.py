@@ -1,7 +1,7 @@
 """
-Генерация PDF-отчёта для налоговой.
-GET /?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&taxable_only=1&vat_rate=20
-Возвращает PDF с таблицей операций + фото документов.
+Генерация PDF-отчётов для налоговой.
+GET /?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&taxable_only=1&vat_rate=20&mode=report — финансовый отчёт
+GET /?...&mode=docs — PDF с фото первичных документов
 """
 import json
 import os
@@ -9,7 +9,7 @@ import io
 import base64
 import psycopg2
 import urllib.request
-import urllib.error
+import boto3
 from datetime import date
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p79040548_accounting_automatio")
@@ -19,42 +19,72 @@ CORS = {
     "Access-Control-Allow-Headers": "Content-Type",
 }
 
-# Надёжные зеркала TTF-шрифта с кириллицей (только .ttf, не .woff2!)
-FONT_URLS = [
-    "https://cdn.jsdelivr.net/npm/@fontsource/dejavu-sans@4.5.4/files/dejavu-sans-cyrillic-400-normal.ttf",
-    "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans.ttf",
-    "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf",
-    "https://raw.githubusercontent.com/Mosman1418/DejaVuSans/master/DejaVuSans.ttf",
-]
 FONT_PATH = "/tmp/DejaVuSans.ttf"
+# Шрифт хранится в S3 проекта — всегда доступен
+FONT_S3_KEY = "fonts/DejaVuSans.ttf"
+# Запасные публичные URL
+FONT_FALLBACK_URLS = [
+    "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf",
+    "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans.ttf",
+]
+
+
+def get_s3():
+    return boto3.client(
+        "s3",
+        endpoint_url="https://bucket.poehali.dev",
+        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+    )
+
+
+def is_valid_ttf(data: bytes) -> bool:
+    return len(data) > 50_000 and data[:4] in (
+        b'\x00\x01\x00\x00', b'true', b'OTTO', b'\x00\x00\x01\x00'
+    )
 
 
 def download_font() -> bool:
-    # Проверяем кэш: файл должен быть TTF (начинается с \x00\x01\x00\x00 или 'true' или 'OTTO')
+    """Загружает шрифт: кэш → S3 → внешние URL → сохраняет в S3."""
+    # 1. Локальный кэш
     if os.path.exists(FONT_PATH) and os.path.getsize(FONT_PATH) > 50_000:
         with open(FONT_PATH, "rb") as f:
-            magic = f.read(4)
-        if magic in (b'\x00\x01\x00\x00', b'true', b'OTTO', b'\x00\x00\x01\x00'):
-            return True
+            if is_valid_ttf(f.read()):
+                return True
         os.remove(FONT_PATH)
 
-    for url in FONT_URLS:
+    # 2. Из S3 проекта
+    try:
+        s3 = get_s3()
+        obj = s3.get_object(Bucket="files", Key=FONT_S3_KEY)
+        data = obj["Body"].read()
+        if is_valid_ttf(data):
+            with open(FONT_PATH, "wb") as f:
+                f.write(data)
+            print(f"[pdf] Font loaded from S3, size={len(data)}")
+            return True
+    except Exception as e:
+        print(f"[pdf] S3 font not found: {e}")
+
+    # 3. Внешние URL → сохраняем в S3 для следующих вызовов
+    for url in FONT_FALLBACK_URLS:
         try:
-            req = urllib.request.Request(url, headers={
-                "User-Agent": "Mozilla/5.0",
-                "Accept": "*/*",
-            })
-            with urllib.request.urlopen(req, timeout=20) as r:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=25) as r:
                 data = r.read()
-            # Проверяем что это TTF
-            if len(data) > 50_000 and data[:4] in (b'\x00\x01\x00\x00', b'true', b'OTTO', b'\x00\x00\x01\x00'):
+            if is_valid_ttf(data):
                 with open(FONT_PATH, "wb") as f:
                     f.write(data)
-                print(f"[generate-pdf] Font downloaded from {url}, size={len(data)}")
+                # Сохраняем в S3 чтобы больше не качать
+                try:
+                    s3 = get_s3()
+                    s3.put_object(Bucket="files", Key=FONT_S3_KEY, Body=data, ContentType="font/ttf")
+                    print(f"[pdf] Font saved to S3 from {url}")
+                except Exception as se:
+                    print(f"[pdf] Could not save font to S3: {se}")
                 return True
         except Exception as e:
-            print(f"[generate-pdf] Font URL failed {url}: {e}")
-            continue
+            print(f"[pdf] Font URL failed {url}: {e}")
     return False
 
 
@@ -65,7 +95,8 @@ def get_conn():
 def fmt_rub(n):
     try:
         v = float(n)
-        return f"{v:,.2f} RUB".replace(",", " ")
+        sign = "-" if v < 0 else ""
+        return f"{sign}{abs(v):,.2f} ₽".replace(",", " ")
     except Exception:
         return str(n)
 
@@ -76,198 +107,222 @@ def fmt_date(d):
             return d.strftime("%d.%m.%Y")
         s = str(d)[:10]
         if "-" in s:
-            parts = s.split("-")
-            return f"{parts[2]}.{parts[1]}.{parts[0]}"
+            p = s.split("-")
+            return f"{p[2]}.{p[1]}.{p[0]}"
         return s
     except Exception:
         return str(d)
 
 
 def fetch_image_bytes(url: str) -> bytes | None:
-    """Скачивает изображение по URL, возвращает bytes или None."""
     if not url:
         return None
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=8) as r:
+        with urllib.request.urlopen(req, timeout=10) as r:
             return r.read()
     except Exception:
         return None
 
 
-def generate_pdf_bytes(transactions, date_from, date_to, income_total, expense_total, vat_rate):
+def get_font():
+    """Возвращает (font_name, font_ok)."""
+    font_ok = download_font()
+    if font_ok:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        try:
+            # Проверяем — уже зарегистрирован?
+            pdfmetrics.getFont("DejaVu")
+            return "DejaVu", True
+        except Exception:
+            pass
+        try:
+            pdfmetrics.registerFont(TTFont("DejaVu", FONT_PATH))
+            pdfmetrics.registerFont(TTFont("DejaVu-Bold", FONT_PATH))
+            return "DejaVu", True
+        except Exception as e:
+            print(f"[pdf] Font register error: {e}")
+    return "Helvetica", False
+
+
+def make_paragraph(text, font, size=9, bold=False, color=None, align=0):
+    from reportlab.platypus import Paragraph
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib import colors as rl_colors
+    color = color or rl_colors.black
+    style = ParagraphStyle(
+        "s",
+        fontName=font,
+        fontSize=size,
+        textColor=color,
+        alignment=align,
+        leading=size * 1.45,
+        wordWrap="CJK",
+    )
+    txt = f"<b>{text}</b>" if bold else text
+    return Paragraph(txt, style)
+
+
+def generate_report_pdf(transactions, date_from, date_to, income_total, expense_total, vat_rate) -> bytes:
+    """PDF финансового отчёта (без фото)."""
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import cm
-    from reportlab.platypus import (
-        SimpleDocTemplate, Table, TableStyle, Paragraph,
-        Spacer, Image, PageBreak, KeepTogether,
-    )
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer
 
-    # --- Шрифт ---
-    font_ok = download_font()
-    if font_ok:
-        try:
-            pdfmetrics.registerFont(TTFont("DejaVu", FONT_PATH))
-            base_font = "DejaVu"
-        except Exception:
-            base_font = "Helvetica"
-    else:
-        base_font = "Helvetica"
+    font, _ = get_font()
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         rightMargin=1.5 * cm, leftMargin=1.5 * cm,
         topMargin=2 * cm, bottomMargin=2 * cm,
+        title="Финансовый отчёт ИП",
     )
 
     def P(text, size=9, bold=False, color=colors.black, align=0):
-        return Paragraph(
-            f"<b>{text}</b>" if bold else text,
-            ParagraphStyle("p", fontName=base_font, fontSize=size,
-                           textColor=color, alignment=align, leading=size * 1.4),
-        )
+        return make_paragraph(text, font, size, bold, color, align)
 
     story = []
+    story.append(P("Финансовый отчёт ИП", size=18, bold=True, align=1))
+    story.append(P(f"Период: {fmt_date(date_from)} — {fmt_date(date_to)}", size=10, color=colors.grey, align=1))
+    story.append(Spacer(1, 0.7 * cm))
 
-    # === Страница 1: Финансовый отчёт ===
-    story.append(P("Finansovyj otchet IP" if base_font == "Helvetica" else "Финансовый отчёт ИП",
-                   size=16, bold=True, align=1))
-    period_label = f"{fmt_date(date_from)} -- {fmt_date(date_to)}" if base_font == "Helvetica" else f"Период: {fmt_date(date_from)} — {fmt_date(date_to)}"
-    story.append(P(period_label, size=10, color=colors.grey, align=1))
-    story.append(Spacer(1, 0.6 * cm))
-
-    # Таблица операций
-    col_widths = [2.2 * cm, 2.2 * cm, 3.5 * cm, 6.0 * cm, 3.1 * cm]
-
-    def safe(s, maxlen=80):
-        return str(s or "")[:maxlen]
-
-    if base_font == "Helvetica":
-        hdr = ["Data", "Tip", "Statia", "Opisanie", "Summa"]
-        totals_labels = ["ITOGO DOKHODOV:", "ITOGO RASKHODOV:", "CHISTAYA PRIBYL:"]
-    else:
-        hdr = ["Дата", "Тип", "Статья", "Описание", "Сумма"]
-        totals_labels = ["ИТОГО ДОХОДОВ:", "ИТОГО РАСХОДОВ:", "ЧИСТАЯ ПРИБЫЛЬ:"]
+    hdr = ["Дата", "Тип", "Статья затрат", "Описание", "Сумма"]
+    col_widths = [2.3 * cm, 1.8 * cm, 3.5 * cm, 6.2 * cm, 3.2 * cm]
 
     data = [hdr]
     for tx in transactions:
         amt = float(tx["amount"])
-        tx_type = ("Доход" if amt >= 0 else "Расход") if base_font != "Helvetica" else ("+" if amt >= 0 else "-")
+        tx_type = "Доход" if amt >= 0 else "Расход"
         data.append([
             fmt_date(tx["date"]),
             tx_type,
-            safe(tx["category"], 30),
-            safe(tx["description"], 70),
+            str(tx.get("category") or "")[:35],
+            str(tx.get("description") or "")[:80],
             fmt_rub(abs(amt)),
         ])
 
     net = income_total - expense_total
     vat_amount = net * vat_rate / 100 if vat_rate > 0 else 0
 
-    data.append(["", "", "", totals_labels[0], fmt_rub(income_total)])
-    data.append(["", "", "", totals_labels[1], fmt_rub(expense_total)])
-    data.append(["", "", "", totals_labels[2], fmt_rub(net)])
+    data.append(["", "", "", "ИТОГО ДОХОДОВ:", fmt_rub(income_total)])
+    data.append(["", "", "", "ИТОГО РАСХОДОВ:", fmt_rub(expense_total)])
+    data.append(["", "", "", "ЧИСТАЯ ПРИБЫЛЬ:", fmt_rub(net)])
     if vat_rate > 0:
-        vat_label = f"NDS {vat_rate}%:" if base_font == "Helvetica" else f"НДС {vat_rate}%:"
-        data.append(["", "", "", vat_label, fmt_rub(vat_amount)])
+        data.append(["", "", "", f"НДС {int(vat_rate)}%:", fmt_rub(vat_amount)])
 
     n = len(data)
     totals_start = n - (4 if vat_rate > 0 else 3)
 
+    # Параграфы для переноса текста в ячейках
+    for i in range(1, totals_start):
+        row = data[i]
+        data[i] = [
+            P(row[0], size=8),
+            P(row[1], size=8),
+            P(row[2], size=8),
+            P(row[3], size=8),
+            P(row[4], size=8, align=2),
+        ]
+    for i in range(totals_start, n):
+        row = data[i]
+        data[i] = ["", "", "", P(row[3], size=9, bold=True, align=2), P(row[4], size=9, bold=True, align=2)]
+    # Заголовок
+    data[0] = [P(h, size=9, bold=True, color=colors.white) for h in hdr]
+
     table = Table(data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
-        ("FONTNAME", (0, 0), (-1, -1), base_font),
-        ("FONTSIZE", (0, 0), (-1, -1), 8),
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTSIZE", (0, 0), (-1, 0), 9),
-        ("GRID", (0, 0), (-1, totals_start - 1), 0.5, colors.lightgrey),
-        ("ROWBACKGROUNDS", (0, 1), (-1, totals_start - 1),
-         [colors.white, colors.HexColor("#f5f5f5")]),
-        ("ALIGN", (4, 0), (4, -1), "RIGHT"),
-        ("ALIGN", (3, totals_start), (3, -1), "RIGHT"),
-        ("FONTNAME", (0, totals_start), (-1, -1), base_font),
-        ("FONTSIZE", (0, totals_start), (-1, -1), 9),
-        ("BACKGROUND", (0, totals_start), (-1, -1), colors.HexColor("#f0f0e0")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, totals_start - 1), [colors.white, colors.HexColor("#f8f8f8")]),
+        ("GRID", (0, 0), (-1, totals_start - 1), 0.4, colors.HexColor("#cccccc")),
         ("LINEABOVE", (0, totals_start), (-1, totals_start), 1.5, colors.black),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("BACKGROUND", (0, totals_start), (-1, -1), colors.HexColor("#f0f0e0")),
+        ("ALIGN", (4, 0), (4, -1), "RIGHT"),
+        ("ALIGN", (3, totals_start), (-1, -1), "RIGHT"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(table)
-
     story.append(Spacer(1, 0.8 * cm))
-    gen_label = f"Dokument sformirovan: {date.today().strftime('%d.%m.%Y')}" if base_font == "Helvetica" \
-        else f"Документ сформирован: {date.today().strftime('%d.%m.%Y')}"
-    story.append(P(gen_label, size=8, color=colors.grey))
-
-    # === Страницы с фото документов ===
-    docs_with_images = [
-        tx for tx in transactions
-        if tx.get("s3_url") or tx.get("previewB64")
-    ]
-
-    if docs_with_images:
-        story.append(PageBreak())
-        attach_title = "Prilozhenie: Dokumenty" if base_font == "Helvetica" else "Приложение: Первичные документы"
-        story.append(P(attach_title, size=14, bold=True, align=1))
-        story.append(Spacer(1, 0.4 * cm))
-
-        page_width = A4[0] - 3 * cm  # ширина контента
-        max_img_h = 18 * cm
-
-        for i, tx in enumerate(docs_with_images, 1):
-            img_bytes = None
-            if tx.get("s3_url"):
-                img_bytes = fetch_image_bytes(tx["s3_url"])
-
-            if not img_bytes:
-                continue
-
-            try:
-                img_buf = io.BytesIO(img_bytes)
-                img = Image(img_buf, width=page_width, height=max_img_h, kind="proportional")
-
-                caption = (
-                    f"{i}. {fmt_date(tx['date'])} | {tx.get('category', '')} | "
-                    f"{fmt_rub(abs(float(tx['amount'])))} | {safe(tx.get('description', ''), 60)}"
-                )
-                block = KeepTogether([
-                    P(caption, size=8, color=colors.grey),
-                    Spacer(1, 0.2 * cm),
-                    img,
-                    Spacer(1, 0.5 * cm),
-                ])
-                story.append(block)
-
-                # Новая страница после каждого 2-го документа
-                if i % 2 == 0 and i < len(docs_with_images):
-                    story.append(PageBreak())
-            except Exception:
-                continue
+    story.append(P(f"Документ сформирован: {date.today().strftime('%d.%m.%Y')}", size=8, color=colors.grey))
 
     doc.build(story)
     return buf.getvalue()
 
 
-def handler(event: dict, context) -> dict:
-    cors_headers = {**CORS, "Content-Type": "application/json"}
-    if event.get("httpMethod") == "OPTIONS":
-        return {"statusCode": 200, "headers": {**CORS}, "body": ""}
+def generate_docs_pdf(transactions, date_from, date_to) -> bytes:
+    """PDF с фото первичных документов."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Spacer, Image, PageBreak, KeepTogether,
+    )
 
-    qs = event.get("queryStringParameters") or {}
-    date_from = qs.get("date_from", "")
-    date_to = qs.get("date_to", date.today().isoformat())
-    taxable_only = qs.get("taxable_only", "1") == "1"
-    try:
-        vat_rate = float(qs.get("vat_rate", "20"))
-    except Exception:
-        vat_rate = 20.0
+    font, _ = get_font()
 
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        rightMargin=1.5 * cm, leftMargin=1.5 * cm,
+        topMargin=2 * cm, bottomMargin=2 * cm,
+        title="Первичные документы",
+    )
+
+    def P(text, size=9, bold=False, color=colors.black, align=0):
+        return make_paragraph(text, font, size, bold, color, align)
+
+    story = []
+    story.append(P("Приложение: Первичные документы", size=16, bold=True, align=1))
+    story.append(P(f"Период: {fmt_date(date_from)} — {fmt_date(date_to)}", size=10, color=colors.grey, align=1))
+    story.append(Spacer(1, 0.5 * cm))
+
+    page_width = A4[0] - 3 * cm
+    max_img_h = 22 * cm
+
+    docs_with_images = [tx for tx in transactions if tx.get("s3_url")]
+    if not docs_with_images:
+        story.append(Spacer(1, 2 * cm))
+        story.append(P("Фотографии документов отсутствуют.", size=11, color=colors.grey, align=1))
+    else:
+        for i, tx in enumerate(docs_with_images, 1):
+            img_bytes = fetch_image_bytes(tx["s3_url"])
+            if not img_bytes:
+                continue
+            try:
+                img_buf = io.BytesIO(img_bytes)
+                img = Image(img_buf, width=page_width, height=max_img_h, kind="proportional")
+                caption = (
+                    f"{i}. {fmt_date(tx['date'])}  |  "
+                    f"{tx.get('category') or '—'}  |  "
+                    f"{fmt_rub(abs(float(tx['amount'])))}  |  "
+                    f"{str(tx.get('description') or '')[:70]}"
+                )
+                block = KeepTogether([
+                    P(caption, size=8, color=colors.HexColor("#555555")),
+                    Spacer(1, 0.2 * cm),
+                    img,
+                    Spacer(1, 0.6 * cm),
+                ])
+                story.append(block)
+                if i < len(docs_with_images):
+                    story.append(PageBreak())
+            except Exception as e:
+                print(f"[pdf] Image error for tx {tx.get('id')}: {e}")
+                continue
+
+    story.append(Spacer(1, 0.5 * cm))
+    story.append(P(f"Документ сформирован: {date.today().strftime('%d.%m.%Y')}", size=8, color=colors.grey))
+    doc.build(story)
+    return buf.getvalue()
+
+
+def fetch_transactions(date_from, date_to, taxable_only):
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -279,60 +334,70 @@ def handler(event: dict, context) -> dict:
             conditions.append("date <= %s"); params.append(date_to)
         if taxable_only:
             conditions.append("is_taxable = TRUE")
-        conditions.append("status != 'Отменено'")
+        conditions.append("t.status != 'Отменено'")
         where = " AND ".join(conditions)
 
         cur.execute(f"""
-            SELECT id, date, description, category, amount, status, document_id
-            FROM {SCHEMA}.transactions
+            SELECT t.id, t.date, t.description, t.category, t.amount, t.status, t.document_id,
+                   d.s3_url
+            FROM {SCHEMA}.transactions t
+            LEFT JOIN {SCHEMA}.documents d ON d.id = t.document_id
             WHERE {where}
-            ORDER BY date ASC, id ASC
+            ORDER BY t.date ASC, t.id ASC
         """, params)
 
-        cols = ["id", "date", "description", "category", "amount", "status", "document_id"]
+        cols = ["id", "date", "description", "category", "amount", "status", "document_id", "s3_url"]
         txs = [dict(zip(cols, r)) for r in cur.fetchall()]
+        return txs
+    finally:
+        cur.close()
+        conn.close()
 
-        for tx in txs:
-            tx["s3_url"] = None
-            tx["doc_name"] = None
-            if tx.get("document_id"):
-                cur.execute(
-                    f"SELECT s3_url, name FROM {SCHEMA}.documents WHERE id=%s",
-                    (tx["document_id"],),
-                )
-                doc_row = cur.fetchone()
-                if doc_row:
-                    tx["s3_url"] = doc_row[0]
-                    tx["doc_name"] = doc_row[1]
+
+def handler(event: dict, context) -> dict:
+    if event.get("httpMethod") == "OPTIONS":
+        return {"statusCode": 200, "headers": CORS, "body": ""}
+
+    qs = event.get("queryStringParameters") or {}
+    date_from = qs.get("date_from", "")
+    date_to = qs.get("date_to", date.today().isoformat())
+    taxable_only = qs.get("taxable_only", "1") == "1"
+    mode = qs.get("mode", "report")  # report | docs
+    try:
+        vat_rate = float(qs.get("vat_rate", "20"))
+    except Exception:
+        vat_rate = 20.0
+
+    try:
+        txs = fetch_transactions(date_from, date_to, taxable_only)
 
         income_total = sum(float(t["amount"]) for t in txs if float(t["amount"]) > 0)
         expense_total = sum(abs(float(t["amount"])) for t in txs if float(t["amount"]) < 0)
 
-        try:
-            pdf_bytes = generate_pdf_bytes(
-                txs, date_from or "2000-01-01", date_to,
-                income_total, expense_total, vat_rate,
-            )
-        except Exception as e:
-            return {
-                "statusCode": 500,
-                "headers": cors_headers,
-                "body": json.dumps({"error": str(e)}, ensure_ascii=False),
-            }
-
         period = f"{(date_from or 'all')}_{date_to}"
-        filename = f"Otchet_IP_{period}.pdf"
+
+        if mode == "docs":
+            pdf_bytes = generate_docs_pdf(txs, date_from or "2000-01-01", date_to)
+            filename = f"Dokumenty_IP_{period}.pdf"
+        else:
+            pdf_bytes = generate_report_pdf(txs, date_from or "2000-01-01", date_to, income_total, expense_total, vat_rate)
+            filename = f"Otchet_IP_{period}.pdf"
 
         return {
             "statusCode": 200,
             "headers": {
                 **CORS,
                 "Content-Type": "application/pdf",
-                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Disposition": f'attachment; filename*=UTF-8\'\'{filename}',
             },
             "body": base64.b64encode(pdf_bytes).decode("ascii"),
             "isBase64Encoded": True,
         }
-    finally:
-        cur.close()
-        conn.close()
+    except Exception as ex:
+        import traceback
+        print(f"[pdf] Error: {traceback.format_exc()}")
+        return {
+            "statusCode": 500,
+            "headers": {**CORS, "Content-Type": "application/json"},
+            "body": json.dumps({"error": str(ex)}, ensure_ascii=False),
+        }
