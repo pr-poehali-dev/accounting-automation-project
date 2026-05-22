@@ -519,16 +519,21 @@ export default function Documents() {
   };
 
   const handleCategoryChange = async (newCategory: string) => {
-    if (!selected?.recognition?.transaction_id) return;
+    // transaction_id может быть как из БД (rec_category JOIN), так и из памяти (recognition)
+    const txId = selected?.transaction_id || selected?.recognition?.transaction_id;
+    if (!txId) return;
     setSavingCategory(true);
     try {
-      await api.transactions.update(selected.recognition.transaction_id, { category: newCategory });
+      await api.transactions.update(txId, { category: newCategory });
+      // Обновляем оба источника в локальном стейте
       setSelected((prev) => prev ? {
         ...prev,
+        rec_category: newCategory,
         recognition: prev.recognition ? { ...prev.recognition, category: newCategory } : prev.recognition,
       } : prev);
-      setDocs((prev) => prev.map((d) => d.id === selected.id ? {
+      setDocs((prev) => prev.map((d) => d.id === selected!.id ? {
         ...d,
+        rec_category: newCategory,
         recognition: d.recognition ? { ...d.recognition, category: newCategory } : d.recognition,
       } : d));
     } finally {
@@ -551,7 +556,7 @@ export default function Documents() {
     }
     const desc = rec?.description
       || (selected.rec_counterparty ? `${selected.rec_type || "Оплата"} — ${selected.rec_counterparty}` : selected.rec_type || selected.name);
-    setTxForm({ description: desc || "", amount: rawAmount, date: isoDate, category: rec?.category || "Прочее" });
+    setTxForm({ description: desc || "", amount: rawAmount, date: isoDate, category: selected.rec_category || rec?.category || "Прочее" });
     setTxSaved(false);
     setShowNewCat(false);
     setNewCatInput("");
@@ -562,7 +567,7 @@ export default function Documents() {
     if (!txForm.description || !txForm.amount) return;
     setTxSaving(true);
     try {
-      const existingTxId = selected?.recognition?.transaction_id;
+      const existingTxId = selected?.transaction_id || selected?.recognition?.transaction_id;
       if (existingTxId) {
         // Обновляем существующую транзакцию — не создаём новую
         await api.transactions.update(existingTxId, {
@@ -581,6 +586,10 @@ export default function Documents() {
           status: "Выполнено",
         });
       }
+      // Обновляем rec_category в локальном стейте сразу
+      const newCat = txForm.category;
+      setSelected((prev) => prev ? { ...prev, rec_category: newCat } : prev);
+      setDocs((prev) => prev.map((d) => d.id === selected!.id ? { ...d, rec_category: newCat } : d));
       setTxSaved(true);
       setTimeout(() => { setShowTxModal(false); setTxSaved(false); }, 1500);
     } finally {
@@ -913,14 +922,14 @@ export default function Documents() {
                       icon={field.icon} onSave={(v) => handleFieldUpdate(field.field, v)} />
                   ))}
 
-                  {selected.recognition?.category && (
+                  {(selected.rec_category || selected.recognition?.category) && (
                     <div className="flex items-center gap-2 pt-1">
                       <span className="text-xs text-muted-foreground flex-shrink-0">Статья затрат:</span>
                       {editingCategory ? (
                         <div className="flex items-center gap-1.5 flex-1">
                           <select
                             autoFocus
-                            defaultValue={selected.recognition.category}
+                            defaultValue={selected.rec_category || selected.recognition?.category || ""}
                             disabled={savingCategory}
                             onChange={(e) => { if (e.target.value !== "__new__") handleCategoryChange(e.target.value); }}
                             onBlur={() => !savingCategory && setEditingCategory(false)}
@@ -938,7 +947,7 @@ export default function Documents() {
                           className="flex items-center gap-1 text-xs bg-gold/15 hover:bg-gold/25 text-gold px-2.5 py-1 rounded-full font-medium transition-colors group"
                           title="Нажмите чтобы изменить"
                         >
-                          {selected.recognition.category}
+                          {selected.rec_category || selected.recognition?.category}
                           <Icon name="ChevronDown" size={11} className="opacity-60 group-hover:opacity-100" />
                         </button>
                       )}
@@ -954,7 +963,7 @@ export default function Documents() {
 
                   <div className="flex gap-2 pt-2">
                     {/* Show "create tx" only if not auto-created */}
-                    {!selected.recognition?.transaction_id && (
+                    {!(selected.transaction_id || selected.recognition?.transaction_id) && (
                       <button onClick={openCreateTx}
                         className="flex-1 py-3 sm:py-2.5 bg-gold text-primary-foreground rounded text-sm font-medium hover:bg-yellow-500 transition-colors active:scale-95 flex items-center justify-center gap-2">
                         <Icon name="Plus" size={15} />
@@ -962,7 +971,7 @@ export default function Documents() {
                         <span className="sm:hidden">Создать операцию</span>
                       </button>
                     )}
-                    {selected.recognition?.transaction_id && (
+                    {(selected.transaction_id || selected.recognition?.transaction_id) && (
                       <button onClick={openCreateTx}
                         className="flex-1 py-3 sm:py-2.5 border border-border text-muted-foreground rounded text-sm hover:text-foreground hover:border-gold/40 transition-colors flex items-center justify-center gap-2">
                         <Icon name="Pencil" size={14} />
@@ -993,8 +1002,8 @@ export default function Documents() {
           <div className="w-full sm:max-w-md card-fin rounded-t-2xl sm:rounded-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold">{selected?.recognition?.transaction_id ? "Исправить операцию" : "Создать операцию-расход"}</h2>
-                <div className="text-xs text-muted-foreground mt-0.5">{selected?.recognition?.transaction_id ? "Изменения сохранятся в существующей операции" : "Данные заполнены ИИ, можно исправить"}</div>
+                <h2 className="text-sm font-semibold">{(selected?.transaction_id || selected?.recognition?.transaction_id) ? "Исправить операцию" : "Создать операцию-расход"}</h2>
+                <div className="text-xs text-muted-foreground mt-0.5">{(selected?.transaction_id || selected?.recognition?.transaction_id) ? "Изменения сохранятся в существующей операции" : "Данные заполнены ИИ, можно исправить"}</div>
               </div>
               <button onClick={() => setShowTxModal(false)} className="text-muted-foreground hover:text-foreground"><Icon name="X" size={18} /></button>
             </div>

@@ -39,13 +39,18 @@ def handler(event: dict, context) -> dict:
     try:
         if method == "GET":
             cur.execute(f"""
-                SELECT id, name, size_label, file_key, status,
-                       rec_type, rec_amount, rec_date, rec_counterparty, rec_inn, created_at, s3_url
-                FROM {SCHEMA}.documents
-                ORDER BY created_at DESC
+                SELECT d.id, d.name, d.size_label, d.file_key, d.status,
+                       d.rec_type, d.rec_amount, d.rec_date, d.rec_counterparty, d.rec_inn,
+                       d.created_at, d.s3_url,
+                       t.id AS transaction_id, t.category AS rec_category
+                FROM {SCHEMA}.documents d
+                LEFT JOIN {SCHEMA}.transactions t
+                    ON t.document_id = d.id AND t.status != 'Отменено'
+                ORDER BY d.created_at DESC
             """)
             cols = ["id","name","size_label","file_key","status",
-                    "rec_type","rec_amount","rec_date","rec_counterparty","rec_inn","created_at","s3_url"]
+                    "rec_type","rec_amount","rec_date","rec_counterparty","rec_inn",
+                    "created_at","s3_url","transaction_id","rec_category"]
             rows = [dict(zip(cols, r)) for r in cur.fetchall()]
             return resp(200, {"documents": rows})
 

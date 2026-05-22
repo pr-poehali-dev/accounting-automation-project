@@ -223,6 +223,8 @@ export interface DocRecord {
   rec_inn: string | null;
   created_at: string;
   s3_url?: string | null;
+  transaction_id?: number | null;
+  rec_category?: string | null;
 }
 
 export interface TaxReport {
