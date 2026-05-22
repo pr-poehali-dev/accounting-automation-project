@@ -74,38 +74,52 @@ def handler(event: dict, context) -> dict:
         safe_name = (file_name or "document").replace(" ", "_").replace("/", "_")
         key = f"{folder}/{now.strftime('%H%M%S')}_{safe_name}"
 
-        if s3cfg:
-            # Пользовательский S3
-            endpoint = s3cfg["endpoint"]
-            if not endpoint.startswith("http"):
-                endpoint = "https://" + endpoint
-            s3 = boto3.client(
-                "s3",
-                endpoint_url=endpoint,
-                aws_access_key_id=s3cfg["access_key"],
-                aws_secret_access_key=s3cfg["secret_key"],
-                region_name="ru-1",
-                config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
-            )
-            put_kwargs = {"Bucket": s3cfg["bucket"], "Key": key, "Body": file_bytes, "ContentType": mime_type}
-            try:
-                s3.put_object(ACL="public-read", **put_kwargs)
-            except Exception as e1:
-                print(f"put_object with ACL failed: {e1}; retrying without ACL")
-                s3.put_object(**put_kwargs)
-            file_url = f"{endpoint}/{s3cfg['bucket']}/{key}"
-        else:
-            # Фоллбэк — S3 проекта (poehali.dev CDN)
+        def upload_to_project_s3(k, data, ct):
+            """Сохраняем в S3 проекта (poehali.dev CDN) — всегда доступен."""
             proj_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
-            s3 = boto3.client(
+            s3p = boto3.client(
                 "s3",
                 endpoint_url="https://bucket.poehali.dev",
                 aws_access_key_id=proj_key,
                 aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
             )
-            s3.put_object(Bucket="files", Key=key, Body=file_bytes, ContentType=mime_type)
-            file_url = f"https://cdn.poehali.dev/projects/{proj_key}/bucket/{key}"
-            print(f"[upload-doc] Used project S3, url={file_url}")
+            s3p.put_object(Bucket="files", Key=k, Body=data, ContentType=ct)
+            url = f"https://cdn.poehali.dev/projects/{proj_key}/bucket/{k}"
+            print(f"[upload-doc] Saved to project S3: {url}")
+            return url
+
+        if s3cfg:
+            # Пробуем загрузить в Reg.ru S3 пользователя
+            endpoint = s3cfg["endpoint"]
+            if not endpoint.startswith("http"):
+                endpoint = "https://" + endpoint
+            try:
+                s3 = boto3.client(
+                    "s3",
+                    endpoint_url=endpoint,
+                    aws_access_key_id=s3cfg["access_key"],
+                    aws_secret_access_key=s3cfg["secret_key"],
+                    config=Config(
+                        signature_version="s3v4",
+                        s3={"addressing_style": "path"},
+                        connect_timeout=10,
+                        read_timeout=15,
+                        retries={"max_attempts": 1},
+                    ),
+                )
+                put_kwargs = {"Bucket": s3cfg["bucket"], "Key": key, "Body": file_bytes, "ContentType": mime_type}
+                try:
+                    s3.put_object(ACL="public-read", **put_kwargs)
+                except Exception:
+                    s3.put_object(**put_kwargs)
+                file_url = f"{endpoint}/{s3cfg['bucket']}/{key}"
+                print(f"[upload-doc] Uploaded to user Reg.ru S3: {file_url}")
+            except Exception as regru_err:
+                print(f"[upload-doc] Reg.ru S3 failed ({regru_err}), falling back to project S3")
+                file_url = upload_to_project_s3(key, file_bytes, mime_type)
+        else:
+            # S3 пользователя не настроен — используем S3 проекта
+            file_url = upload_to_project_s3(key, file_bytes, mime_type)
 
         if doc_id:
             try:
