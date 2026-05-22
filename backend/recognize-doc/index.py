@@ -716,11 +716,25 @@ def handler(event: dict, context) -> dict:
         body = json.loads(event.get("body") or "{}")
         images_list = body.get("images", [])
         image_b64 = body.get("image_b64", "")
+        image_url = body.get("image_url", "")
         excel_b64 = body.get("excel_b64", "")
         mime_type = body.get("mime_type", "image/jpeg")
         file_name = body.get("file_name", "document")
         doc_id = body.get("doc_id")
         auto_create_tx = body.get("auto_create_tx", True)
+
+        # Если передан URL — скачиваем изображение на бэкенде (обходит CORS браузера)
+        if image_url and not image_b64 and not images_list:
+            try:
+                req = urllib.request.Request(image_url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    img_data = r.read()
+                image_b64 = base64.b64encode(img_data).decode()
+                mime_type = "image/jpeg"
+                print(f"[recognize-doc] Downloaded image from URL, size={len(img_data)} bytes")
+            except Exception as e:
+                return {"statusCode": 400, "headers": CORS,
+                        "body": json.dumps({"error": f"Не удалось скачать изображение по ссылке: {e}"}, ensure_ascii=False)}
 
         if not yandex_key and not gemini_key and not deepseek_key and not proxyapi_key:
             return {"statusCode": 400, "headers": CORS,

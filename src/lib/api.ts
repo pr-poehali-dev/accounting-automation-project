@@ -164,6 +164,7 @@ export const api = {
     doc_id?: number; auto_create_tx?: boolean;
     images?: { b64: string; mime: string }[];
     excel_b64?: string;
+    image_url?: string;
   }) =>
     request<RecognizeResult>(URLS.recognizeDoc, {
       method: "POST",

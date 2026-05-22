@@ -410,27 +410,27 @@ export default function Documents() {
     setDocs((prev) => prev.map((d) => d.id === selected.id ? { ...d, recognizing: true, status: "processing" } : d));
     setSelected((prev) => prev ? { ...prev, recognizing: true, status: "processing" } : prev);
     try {
-      // Загружаем изображение через fetch (обходит CORS ограничения canvas)
-      const fetchResp = await fetch(imgSrc);
-      if (!fetchResp.ok) throw new Error("Не удалось загрузить изображение для повторного распознавания");
-      const blob = await fetchResp.blob();
-      const b64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result as string;
-          resolve(dataUrl.split(",")[1]);
-        };
-        reader.onerror = () => reject(new Error("Не удалось прочитать изображение"));
-        reader.readAsDataURL(blob);
-      });
-      if (!b64 || b64.length < 200) throw new Error("Изображение слишком маленькое или повреждено");
-      const result = await api.recognizeDoc({
-        image_b64: b64,
-        mime_type: "image/jpeg",
-        file_name: selected.name || "document.jpg",
-        doc_id: selected.id,
-        auto_create_tx: true,
-      });
+      let result;
+      // Если есть локальный preview (data: URL) — берём его напрямую
+      if (selected.previewUrl && selected.previewUrl.startsWith("data:")) {
+        const b64 = selected.previewUrl.split(",")[1];
+        if (!b64 || b64.length < 200) throw new Error("Изображение повреждено, загрузите файл заново");
+        result = await api.recognizeDoc({
+          image_b64: b64,
+          mime_type: "image/jpeg",
+          file_name: selected.name || "document.jpg",
+          doc_id: selected.id,
+          auto_create_tx: true,
+        });
+      } else {
+        // Нет локального preview — передаём URL на бэкенд, он скачает сам
+        result = await api.recognizeDoc({
+          image_url: imgSrc,
+          file_name: selected.name || "document.jpg",
+          doc_id: selected.id,
+          auto_create_tx: true,
+        });
+      }
       if (result.error) throw new Error(result.error);
       await api.documents.update(selected.id, {
         status: "done",
