@@ -85,6 +85,7 @@ export default function Transactions() {
     });
     setError("");
     setShowForm(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleSave = async () => {
