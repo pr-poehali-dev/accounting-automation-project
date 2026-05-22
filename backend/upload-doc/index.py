@@ -8,14 +8,10 @@ import os
 import base64
 import hashlib
 import traceback
-import hmac
 import psycopg2
 import boto3
 import requests
 from botocore.config import Config
-from botocore.auth import SigV4Auth
-from botocore.awsrequest import AWSRequest
-from botocore.credentials import Credentials
 from datetime import datetime, timezone
 
 
@@ -45,24 +41,34 @@ def get_s3_settings(cur):
 
 
 def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secret_key):
-    """Загружает файл через requests + SigV4 — гарантированный path-style URL."""
+    """Загружает файл через presigned URL — boto3 подписывает, requests делает PUT."""
+    print(f"[upload-doc] Generating presigned URL for {endpoint}/{bucket}/{key}, size={len(data)}")
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        config=Config(
+            connect_timeout=10,
+            read_timeout=45,
+            retries={"max_attempts": 1},
+            s3={"addressing_style": "path"},
+        ),
+        region_name="us-east-1",
+    )
+    presigned_url = s3.generate_presigned_url(
+        "put_object",
+        Params={"Bucket": bucket, "Key": key, "ContentType": content_type},
+        ExpiresIn=300,
+    )
+    print(f"[upload-doc] Presigned URL: {presigned_url[:80]}...")
+    resp_r = requests.put(presigned_url, data=data, headers={"Content-Type": content_type}, timeout=45)
+    print(f"[upload-doc] PUT response: {resp_r.status_code} {resp_r.text[:200]}")
+    if resp_r.status_code not in (200, 201, 204):
+        raise Exception(f"S3 PUT failed: {resp_r.status_code} {resp_r.text[:200]}")
     url = f"{endpoint}/{bucket}/{key}"
-    print(f"[upload-doc] PUT {url}, size={len(data)} bytes")
-
-    credentials = Credentials(access_key, secret_key)
-    # Пробуем разные регионы — Рег.ру может требовать конкретный
-    for region in ["us-east-1", "ru-1", "ru-msk-1", "default"]:
-        try:
-            req_attempt = AWSRequest(method="PUT", url=url, data=data, headers={"Content-Type": content_type})
-            SigV4Auth(credentials, "s3", region).add_auth(req_attempt)
-            resp_try = requests.put(url, data=data, headers=dict(req_attempt.headers), timeout=45)
-            print(f"[upload-doc] region={region!r} → {resp_try.status_code} {resp_try.text[:100]}")
-            if resp_try.status_code in (200, 201, 204):
-                print(f"[upload-doc] SUCCESS with region={region!r}: {url}")
-                return url
-        except Exception as e:
-            print(f"[upload-doc] region={region!r} error: {e}")
-    raise Exception("All regions failed for Reg.ru S3")
+    print(f"[upload-doc] Upload OK: {url}")
+    return url
 
 
 def upload_to_project_s3(key, data, content_type):
