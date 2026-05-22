@@ -41,8 +41,8 @@ def get_s3_settings(cur):
 
 
 def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secret_key):
-    """Загружает файл через presigned URL — boto3 подписывает, requests делает PUT."""
-    print(f"[upload-doc] Generating presigned URL for {endpoint}/{bucket}/{key}, size={len(data)}")
+    """Загружает файл через presigned URL чанками."""
+    print(f"[upload-doc] Generating presigned URL, size={len(data)}")
     s3 = boto3.client(
         "s3",
         endpoint_url=endpoint,
@@ -61,8 +61,20 @@ def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secr
         Params={"Bucket": bucket, "Key": key, "ContentType": content_type},
         ExpiresIn=300,
     )
-    print(f"[upload-doc] Presigned URL: {presigned_url[:80]}...")
-    resp_r = requests.put(presigned_url, data=data, headers={"Content-Type": content_type}, timeout=45)
+    print(f"[upload-doc] Presigned URL OK, uploading via chunked transfer...")
+
+    # Чанкованная передача — обходит зависание при Content-Length
+    def chunked(data, chunk_size=65536):
+        for i in range(0, len(data), chunk_size):
+            yield data[i:i + chunk_size]
+
+    session = requests.Session()
+    resp_r = session.put(
+        presigned_url,
+        data=chunked(data),
+        headers={"Content-Type": content_type, "Transfer-Encoding": "chunked"},
+        timeout=45,
+    )
     print(f"[upload-doc] PUT response: {resp_r.status_code} {resp_r.text[:200]}")
     if resp_r.status_code not in (200, 201, 204):
         raise Exception(f"S3 PUT failed: {resp_r.status_code} {resp_r.text[:200]}")
