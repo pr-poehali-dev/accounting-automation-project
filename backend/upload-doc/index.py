@@ -8,10 +8,14 @@ import os
 import base64
 import hashlib
 import traceback
-import tempfile
+import hmac
 import psycopg2
 import boto3
+import requests
 from botocore.config import Config
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
+from botocore.credentials import Credentials
 from datetime import datetime, timezone
 
 
@@ -41,34 +45,20 @@ def get_s3_settings(cur):
 
 
 def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secret_key):
-    """Загружает файл в S3 через upload_file() с временным файлом на диске."""
-    print(f"[upload-doc] Connecting to {endpoint}, bucket={bucket}, key={key}, size={len(data)} bytes")
-    s3 = boto3.client(
-        "s3",
-        endpoint_url=endpoint,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        config=Config(
-            connect_timeout=10,
-            read_timeout=45,
-            retries={"max_attempts": 1},
-            s3={"addressing_style": "path"},
-        ),
-    )
-    print(f"[upload-doc] Writing to temp file...")
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
-        tmp.write(data)
-        tmp_path = tmp.name
-    try:
-        print(f"[upload-doc] Calling upload_file()...")
-        s3.upload_file(
-            tmp_path, bucket, key,
-            ExtraArgs={"ContentType": content_type},
-        )
-    finally:
-        os.unlink(tmp_path)
+    """Загружает файл через requests + SigV4 — гарантированный path-style URL."""
     url = f"{endpoint}/{bucket}/{key}"
-    print(f"[upload-doc] upload_file OK: {url}")
+    print(f"[upload-doc] PUT {url}, size={len(data)} bytes")
+
+    credentials = Credentials(access_key, secret_key)
+    request = AWSRequest(method="PUT", url=url, data=data, headers={"Content-Type": content_type})
+    SigV4Auth(credentials, "s3", "us-east-1").add_auth(request)
+
+    print(f"[upload-doc] Sending PUT via requests...")
+    resp_r = requests.put(url, data=data, headers=dict(request.headers), timeout=45)
+    print(f"[upload-doc] Response: {resp_r.status_code} {resp_r.text[:200]}")
+    if resp_r.status_code not in (200, 201, 204):
+        raise Exception(f"S3 PUT failed: {resp_r.status_code} {resp_r.text[:200]}")
+    print(f"[upload-doc] Upload OK: {url}")
     return url
 
 
