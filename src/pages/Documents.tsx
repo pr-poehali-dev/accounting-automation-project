@@ -275,6 +275,54 @@ export default function Documents() {
     }
   };
 
+  const addFilesAsMultiPage = async (files: File[]) => {
+    try {
+      const compressedPages = await Promise.all(
+        files.map(async (file) => {
+          const c = await compressImageToBase64(file, 2400, 0.92, true);
+          return { file, previewUrl: c.previewUrl, b64: c.b64, mime: c.mime };
+        }),
+      );
+      const totalSize = files.reduce((s, f) => s + f.size, 0);
+      const sizeMb = (totalSize / 1024 / 1024).toFixed(1);
+      const docName = `Накладная (${compressedPages.length} стр.)`;
+
+      const res = await api.documents.create({
+        name: docName,
+        size_label: `${sizeMb} МБ`,
+        status: "processing",
+      });
+
+      const combinedPreview = compressedPages[0].previewUrl;
+      if (combinedPreview) savePreview(res.document.id, combinedPreview);
+
+      const newDoc: DocWithRecognition = {
+        ...res.document,
+        status: "processing",
+        recognizing: true,
+        previewUrl: combinedPreview,
+      };
+      setDocs((prev) => [newDoc, ...prev]);
+      setSelected(newDoc);
+      setMobileView("detail");
+
+      if (compressedPages[0]?.b64) {
+        api.uploadDoc({
+          file_b64: compressedPages[0].b64,
+          file_name: `scan_${res.document.id}.jpg`,
+          mime_type: "image/jpeg",
+          doc_id: res.document.id,
+        }).catch(() => {});
+      }
+
+      const images = compressedPages.map((p) => ({ b64: p.b64, mime: p.mime }));
+      await recognizeMultiPage(res.document.id, images, combinedPreview, docName);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Ошибка обработки";
+      alert(`Не удалось обработать страницы: ${msg}`);
+    }
+  };
+
   const addFiles = async (files: File[]) => {
     const skipped = files.filter((f) => !isSupported(f.name));
     if (skipped.length) {
@@ -284,30 +332,52 @@ export default function Documents() {
       );
     }
     const accepted = files.filter((f) => isSupported(f.name));
-    for (const f of accepted) {
-      // Создаём превью сразу для отображения — с CamScanner-обработкой высокого качества
-      let previewUrl: string | undefined;
-      if (isImage(f.name)) {
-        try {
-          const compressed = await compressImageToBase64(f, 2400, 0.92, true);
-          previewUrl = compressed.previewUrl;
-        } catch {
-          previewUrl = URL.createObjectURL(f);
+
+    // Если выбрано несколько изображений — предлагаем склеить как один документ (страницы одной накладной)
+    const images = accepted.filter((f) => isImage(f.name));
+    const nonImages = accepted.filter((f) => !isImage(f.name));
+    if (images.length >= 2) {
+      const merge = confirm(
+        `Вы выбрали ${images.length} фото.\n\n` +
+        "ОК — объединить как страницы одной накладной (рекомендуется, если это разные страницы одного документа).\n\n" +
+        "Отмена — загрузить как отдельные документы."
+      );
+      if (merge) {
+        await addFilesAsMultiPage(images.slice(0, 5));
+        // Остальные не-изображения (Excel/PDF) обрабатываем как отдельные
+        for (const f of nonImages) {
+          await processSingleFile(f);
         }
+        return;
       }
-      const res = await api.documents.create({
-        name: f.name,
-        size_label: `${(f.size / 1024 / 1024).toFixed(1)} МБ`,
-        status: "processing",
-      });
-      // Сохраняем превью в localStorage чтобы не терять при переключении вкладок
-      if (previewUrl) savePreview(res.document.id, previewUrl);
-      const newDoc: DocWithRecognition = { ...res.document, status: "processing", recognizing: true, previewUrl };
-      setDocs((prev) => [newDoc, ...prev]);
-      setSelected(newDoc);
-      setMobileView("detail");
-      recognizeFile(res.document.id, f, previewUrl);
     }
+
+    for (const f of accepted) {
+      await processSingleFile(f);
+    }
+  };
+
+  const processSingleFile = async (f: File) => {
+    let previewUrl: string | undefined;
+    if (isImage(f.name)) {
+      try {
+        const compressed = await compressImageToBase64(f, 2400, 0.92, true);
+        previewUrl = compressed.previewUrl;
+      } catch {
+        previewUrl = URL.createObjectURL(f);
+      }
+    }
+    const res = await api.documents.create({
+      name: f.name,
+      size_label: `${(f.size / 1024 / 1024).toFixed(1)} МБ`,
+      status: "processing",
+    });
+    if (previewUrl) savePreview(res.document.id, previewUrl);
+    const newDoc: DocWithRecognition = { ...res.document, status: "processing", recognizing: true, previewUrl };
+    setDocs((prev) => [newDoc, ...prev]);
+    setSelected(newDoc);
+    setMobileView("detail");
+    recognizeFile(res.document.id, f, previewUrl);
   };
 
   const handleDrop = (e: React.DragEvent) => {
