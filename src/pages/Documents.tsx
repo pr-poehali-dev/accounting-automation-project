@@ -895,7 +895,9 @@ export default function Documents() {
                   )}
 
                   {/* Warning if amount not found — tx not created */}
-                  {!selected.recognition?.transaction_id && !selected.recognition?.error && (
+                  {selected.recognition && !selected.recognition.error
+                    && !selected.recognition.transaction_id && !selected.transaction_id
+                    && !selected.rec_amount && (
                     <div className="flex items-start gap-3 p-3 rounded-lg bg-yellow-900/20 border border-yellow-900/30">
                       <Icon name="AlertTriangle" size={16} className="text-yellow-400 flex-shrink-0 mt-0.5" />
                       <div className="flex-1 min-w-0">
