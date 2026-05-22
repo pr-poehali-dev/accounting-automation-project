@@ -402,16 +402,17 @@ export default function Documents() {
 
   const recognizeAgain = async () => {
     if (!selected) return;
-    if (!selected.previewUrl || !selected.previewUrl.startsWith("data:")) {
+    const imgSrc = selected.previewUrl || selected.s3_url;
+    if (!imgSrc) {
       alert("Изображение этого документа не сохранилось — загрузите файл заново для повторного распознавания.");
       return;
     }
     setDocs((prev) => prev.map((d) => d.id === selected.id ? { ...d, recognizing: true, status: "processing" } : d));
     setSelected((prev) => prev ? { ...prev, recognizing: true, status: "processing" } : prev);
     try {
-      // Перекодируем превью через canvas в свежий JPEG высокого качества
       const b64 = await new Promise<string>((resolve, reject) => {
         const img = new Image();
+        img.crossOrigin = "anonymous";
         img.onload = () => {
           let { width, height } = img;
           const max = 2400;
@@ -427,7 +428,7 @@ export default function Documents() {
           resolve(dataUrl.split(",")[1]);
         };
         img.onerror = () => reject(new Error("Не удалось прочитать изображение"));
-        img.src = selected.previewUrl!;
+        img.src = imgSrc;
       });
       if (!b64 || b64.length < 200) throw new Error("Изображение слишком маленькое или повреждено");
       const result = await api.recognizeDoc({
@@ -776,12 +777,12 @@ export default function Documents() {
                       <Icon name="AlertCircle" size={12} /> Ошибка
                     </span>
                   )}
-                  {!selected.recognizing && selected.previewUrl && (
+                  {!selected.recognizing && (selected.previewUrl || selected.s3_url) && (
                     <button onClick={recognizeAgain}
                       title="Распознать заново"
                       className="flex items-center gap-1.5 text-xs text-gold bg-gold/10 hover:bg-gold/20 px-2.5 py-1 rounded-full whitespace-nowrap transition-colors active:scale-95">
                       <Icon name="RefreshCw" size={12} />
-                      <span className="hidden sm:inline">Заново</span>
+                      <span className="hidden sm:inline">Прочитать повторно</span>
                     </button>
                   )}
                 </div>
@@ -811,10 +812,10 @@ export default function Documents() {
               )}
 
               {/* Document preview */}
-              {selected.previewUrl && (
+              {(selected.previewUrl || selected.s3_url) && (
                 <div className="mb-3 rounded-lg overflow-hidden border border-border bg-secondary/30">
                   <img
-                    src={selected.previewUrl}
+                    src={selected.previewUrl || selected.s3_url}
                     alt="Документ"
                     className="w-full max-h-52 object-contain"
                   />

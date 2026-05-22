@@ -19,24 +19,35 @@ CORS = {
     "Access-Control-Allow-Headers": "Content-Type",
 }
 
-# Надёжные зеркала для шрифта с кириллицей
+# Надёжные зеркала TTF-шрифта с кириллицей (только .ttf, не .woff2!)
 FONT_URLS = [
-    "https://cdn.jsdelivr.net/npm/@fontsource/dejavu-sans@4.5.0/files/dejavu-sans-latin-400-normal.woff2",
     "https://github.com/dejavu-fonts/dejavu-fonts/raw/refs/heads/master/ttf/DejaVuSans.ttf",
     "https://raw.githubusercontent.com/Mosman1418/DejaVuSans/master/DejaVuSans.ttf",
+    "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf",
+    "https://sourceforge.net/projects/dejavu/files/dejavu/2.37/dejavu-fonts-ttf-2.37.tar.bz2",
 ]
 FONT_PATH = "/tmp/DejaVuSans.ttf"
 
 
 def download_font() -> bool:
+    # Проверяем кэш: файл должен быть TTF (начинается с \x00\x01\x00\x00 или 'true' или 'OTTO')
     if os.path.exists(FONT_PATH) and os.path.getsize(FONT_PATH) > 100_000:
-        return True
+        with open(FONT_PATH, "rb") as f:
+            magic = f.read(4)
+        if magic in (b'\x00\x01\x00\x00', b'true', b'OTTO', b'\x00\x00\x01\x00'):
+            return True
+        os.remove(FONT_PATH)
+
     for url in FONT_URLS:
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=10) as r:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "*/*",
+            })
+            with urllib.request.urlopen(req, timeout=15) as r:
                 data = r.read()
-            if len(data) > 100_000:
+            # Проверяем что это TTF, не woff2/html/архив
+            if len(data) > 100_000 and data[:4] in (b'\x00\x01\x00\x00', b'true', b'OTTO', b'\x00\x00\x01\x00'):
                 with open(FONT_PATH, "wb") as f:
                     f.write(data)
                 return True
