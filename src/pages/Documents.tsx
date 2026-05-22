@@ -163,6 +163,9 @@ export default function Documents() {
   const [pages, setPages] = useState<PageItem[]>([]);
   const [multiProcessing, setMultiProcessing] = useState(false);
 
+  // Диалог объединения нескольких фото
+  const [mergeDialog, setMergeDialog] = useState<{ images: File[]; nonImages: File[] } | null>(null);
+
   // Кастомные категории
   const [customCategories, setCustomCategories] = useState<string[]>(loadCustomCategories);
   const [showNewCat, setShowNewCat] = useState(false);
@@ -356,19 +359,8 @@ export default function Documents() {
     const images = accepted.filter((f) => isImage(f.name));
     const nonImages = accepted.filter((f) => !isImage(f.name));
     if (images.length >= 2) {
-      const merge = confirm(
-        `Вы выбрали ${images.length} фото.\n\n` +
-        "ОК — объединить как страницы одной накладной (рекомендуется, если это разные страницы одного документа).\n\n" +
-        "Отмена — загрузить как отдельные документы."
-      );
-      if (merge) {
-        await addFilesAsMultiPage(images.slice(0, 5));
-        // Остальные не-изображения (Excel/PDF) обрабатываем как отдельные
-        for (const f of nonImages) {
-          await processSingleFile(f);
-        }
-        return;
-      }
+      setMergeDialog({ images, nonImages });
+      return;
     }
 
     for (const f of accepted) {
@@ -724,7 +716,8 @@ export default function Documents() {
           className="flex flex-col items-center justify-center gap-2 p-4 card-fin border-2 border-dashed border-border/60 rounded-xl text-muted-foreground active:scale-95 transition-transform">
           <Icon name="Upload" size={26} />
           <span className="text-sm font-medium">Загрузить файл</span>
-          <span className="text-xs">PDF, JPG, PNG, XLS</span>
+          <span className="text-xs text-center">PDF, JPG, PNG, XLS</span>
+          <span className="text-[10px] text-muted-foreground/60 text-center">можно несколько сразу</span>
           <input ref={inputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" className="hidden"
             onChange={(e) => e.target.files && addFiles(Array.from(e.target.files))} />
         </button>
@@ -754,7 +747,7 @@ export default function Documents() {
               className={`border-2 border-dashed rounded-lg p-5 text-center cursor-pointer transition-all ${dragging ? "border-gold bg-gold/5" : "border-border hover:border-gold/40 hover:bg-secondary/50"}`}>
               <Icon name="Upload" size={24} className={`mx-auto mb-2 ${dragging ? "text-gold" : "text-muted-foreground"}`} />
               <div className="text-sm font-medium mb-1">Перетащите или нажмите</div>
-              <div className="text-xs text-muted-foreground">PDF, JPG, PNG, XLS — ИИ распознает автоматически</div>
+              <div className="text-xs text-muted-foreground">PDF, JPG, PNG, XLS — можно несколько файлов сразу</div>
               <input ref={inputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" className="hidden"
                 onChange={(e) => e.target.files && addFiles(Array.from(e.target.files))} />
             </div>
@@ -1161,6 +1154,45 @@ export default function Documents() {
                 : txSaved
                   ? <><Icon name="CheckCircle" size={15} />Операция создана!</>
                   : <><Icon name="Plus" size={15} />Создать расход</>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Диалог объединения фото ═══ */}
+      {mergeDialog && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-4">
+          <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-5 space-y-4 animate-fade-in">
+            <div className="text-center">
+              <div className="w-12 h-12 rounded-full bg-gold/10 flex items-center justify-center mx-auto mb-3">
+                <Icon name="Images" size={22} className="text-gold" />
+              </div>
+              <div className="font-semibold text-base">Выбрано {mergeDialog.images.length} фото</div>
+              <div className="text-sm text-muted-foreground mt-1">Это разные страницы одного документа или отдельные документы?</div>
+            </div>
+            <button
+              onClick={async () => {
+                const { images, nonImages } = mergeDialog;
+                setMergeDialog(null);
+                await addFilesAsMultiPage(images.slice(0, 5));
+                for (const f of nonImages) await processSingleFile(f);
+              }}
+              className="w-full py-3 bg-gold text-black font-semibold rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform">
+              <Icon name="BookOpen" size={18} />
+              Один документ (страницы)
+            </button>
+            <button
+              onClick={async () => {
+                const { images, nonImages } = mergeDialog;
+                setMergeDialog(null);
+                for (const f of [...images, ...nonImages]) await processSingleFile(f);
+              }}
+              className="w-full py-3 border border-border rounded-xl text-sm text-foreground flex items-center justify-center gap-2 active:scale-95 transition-transform hover:border-gold/40">
+              <Icon name="Files" size={18} />
+              Отдельные документы
+            </button>
+            <button onClick={() => setMergeDialog(null)} className="w-full text-sm text-muted-foreground py-1">
+              Отмена
             </button>
           </div>
         </div>
