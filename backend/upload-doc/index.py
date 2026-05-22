@@ -51,7 +51,7 @@ def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secr
 
     credentials = Credentials(access_key, secret_key)
     request = AWSRequest(method="PUT", url=url, data=data, headers={"Content-Type": content_type})
-    SigV4Auth(credentials, "s3", "us-east-1").add_auth(request)
+    SigV4Auth(credentials, "s3", "ru-1").add_auth(request)
 
     print(f"[upload-doc] Sending PUT via requests...")
     resp_r = requests.put(url, data=data, headers=dict(request.headers), timeout=45)
