@@ -410,25 +410,18 @@ export default function Documents() {
     setDocs((prev) => prev.map((d) => d.id === selected.id ? { ...d, recognizing: true, status: "processing" } : d));
     setSelected((prev) => prev ? { ...prev, recognizing: true, status: "processing" } : prev);
     try {
+      // Загружаем изображение через fetch (обходит CORS ограничения canvas)
+      const fetchResp = await fetch(imgSrc);
+      if (!fetchResp.ok) throw new Error("Не удалось загрузить изображение для повторного распознавания");
+      const blob = await fetchResp.blob();
       const b64 = await new Promise<string>((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => {
-          let { width, height } = img;
-          const max = 2400;
-          if (width > max || height > max) {
-            if (width > height) { height = Math.round((height * max) / width); width = max; }
-            else { width = Math.round((width * max) / height); height = max; }
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = width; canvas.height = height;
-          const ctx = canvas.getContext("2d")!;
-          ctx.drawImage(img, 0, 0, width, height);
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
           resolve(dataUrl.split(",")[1]);
         };
-        img.onerror = () => reject(new Error("Не удалось прочитать изображение"));
-        img.src = imgSrc;
+        reader.onerror = () => reject(new Error("Не удалось прочитать изображение"));
+        reader.readAsDataURL(blob);
       });
       if (!b64 || b64.length < 200) throw new Error("Изображение слишком маленькое или повреждено");
       const result = await api.recognizeDoc({
@@ -438,16 +431,15 @@ export default function Documents() {
         doc_id: selected.id,
         auto_create_tx: true,
       });
-      if (!result.error) {
-        await api.documents.update(selected.id, {
-          status: "done",
-          rec_type: result.doc_type,
-          rec_amount: result.amount_str || (result.amount ? `₽ ${result.amount}` : undefined),
-          rec_date: result.date || undefined,
-          rec_counterparty: result.counterparty || undefined,
-          rec_inn: result.inn || undefined,
-        });
-      }
+      if (result.error) throw new Error(result.error);
+      await api.documents.update(selected.id, {
+        status: "done",
+        rec_type: result.doc_type,
+        rec_amount: result.amount_str || (result.amount ? `₽ ${result.amount}` : undefined),
+        rec_date: result.date || undefined,
+        rec_counterparty: result.counterparty || undefined,
+        rec_inn: result.inn || undefined,
+      });
       const updated = await api.documents.list();
       const updatedDoc = updated.documents.find((d) => d.id === selected.id);
       const finalDoc = { ...(updatedDoc || {}), recognizing: false, recognition: result, previewUrl: selected.previewUrl };
@@ -455,6 +447,7 @@ export default function Documents() {
       setSelected((prev) => prev ? { ...prev, ...finalDoc } : prev);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Ошибка распознавания";
+      await api.documents.update(selected.id, { status: "error" }).catch(() => {});
       setDocs((prev) => prev.map((d) => d.id === selected.id ? { ...d, status: "error", recognizing: false, recognitionError: msg } : d));
       setSelected((prev) => prev ? { ...prev, status: "error", recognizing: false, recognitionError: msg } : prev);
     }
