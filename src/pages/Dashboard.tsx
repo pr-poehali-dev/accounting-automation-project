@@ -1,6 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { api, fmt, type DashboardSummary } from "@/lib/api";
+
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_KEY = "dashboard_quarters_year";
+
+function getQuarterDates(year: number, q: 1 | 2 | 3 | 4) {
+  const ranges = { 1: ["01-01", "03-31"], 2: ["04-01", "06-30"], 3: ["07-01", "09-30"], 4: ["10-01", "12-31"] };
+  const [from, to] = ranges[q];
+  return { date_from: `${year}-${from}`, date_to: `${year}-${to}` };
+}
+
+interface QuarterData { income: number; expense: number; loading: boolean; }
+type QuartersState = [QuarterData, QuarterData, QuarterData, QuarterData];
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
@@ -39,11 +51,35 @@ export default function Dashboard({ onNavigate }: Props) {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [quarterYear, setQuarterYear] = useState<number>(() => {
+    const saved = localStorage.getItem(YEAR_KEY);
+    return saved ? parseInt(saved, 10) : CURRENT_YEAR;
+  });
+  const emptyQ = (): QuarterData => ({ income: 0, expense: 0, loading: true });
+  const [quarters, setQuarters] = useState<QuartersState>([emptyQ(), emptyQ(), emptyQ(), emptyQ()]);
+
+  const loadQuarters = useCallback(async (year: number) => {
+    setQuarters([emptyQ(), emptyQ(), emptyQ(), emptyQ()]);
+    const results = await Promise.all(
+      ([1, 2, 3, 4] as const).map((q) => api.taxReports.summary(getQuarterDates(year, q)))
+    );
+    setQuarters(results.map((r) => ({ income: r.income, expense: r.expense, loading: false })) as QuartersState);
+  }, []);
+
   useEffect(() => {
     api.transactions.summary()
       .then(setData)
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadQuarters(quarterYear);
+  }, [quarterYear, loadQuarters]);
+
+  const handleYearChange = (year: number) => {
+    setQuarterYear(year);
+    localStorage.setItem(YEAR_KEY, String(year));
+  };
 
   const widgets = data
     ? [
@@ -140,6 +176,57 @@ export default function Dashboard({ onNavigate }: Props) {
               <div className="text-xs text-center">Данных пока нет.<br />Добавьте расходные операции.</div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* ── Квартальный обзор ── */}
+      <div className="card-fin p-3 sm:p-5">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <div className="text-[10px] sm:text-xs uppercase tracking-wider sm:tracking-widest text-muted-foreground">Кварталы</div>
+            <div className="text-sm font-medium mt-0.5">Доходы и расходы по кварталам</div>
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={() => handleYearChange(quarterYear - 1)} className="w-7 h-7 rounded flex items-center justify-center hover:bg-secondary transition-colors">
+              <Icon name="ChevronLeft" size={15} className="text-muted-foreground" />
+            </button>
+            <span className="font-mono-fin text-sm font-medium w-12 text-center">{quarterYear}</span>
+            <button onClick={() => handleYearChange(quarterYear + 1)} disabled={quarterYear >= CURRENT_YEAR} className="w-7 h-7 rounded flex items-center justify-center hover:bg-secondary transition-colors disabled:opacity-30">
+              <Icon name="ChevronRight" size={15} className="text-muted-foreground" />
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {(["I кв.", "II кв.", "III кв.", "IV кв."] as const).map((label, i) => {
+            const q = quarters[i];
+            const profit = q.income - q.expense;
+            return (
+              <div key={i} className="card-fin-raised rounded-xl p-3 sm:p-4 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</span>
+                  <span className={`text-[10px] font-mono-fin font-medium ${profit >= 0 ? "text-gold" : "text-red-400"}`}>
+                    {q.loading ? "…" : (profit >= 0 ? "+" : "") + fmt(profit)}
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1 text-muted-foreground"><span className="w-1.5 h-1.5 rounded-full bg-gold inline-block" />Доход</span>
+                    <span className="font-mono-fin">{q.loading ? <span className="inline-block w-12 h-3 bg-secondary rounded animate-pulse" /> : fmt(q.income)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-1 text-muted-foreground"><span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />Расход</span>
+                    <span className="font-mono-fin">{q.loading ? <span className="inline-block w-12 h-3 bg-secondary rounded animate-pulse" /> : fmt(q.expense)}</span>
+                  </div>
+                </div>
+                {!q.loading && (q.income > 0 || q.expense > 0) && (
+                  <div className="h-1 rounded-full bg-secondary overflow-hidden">
+                    <div className="h-full bg-gold rounded-full transition-all"
+                      style={{ width: `${Math.min(100, q.income / Math.max(q.income, q.expense) * 100)}%` }} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
