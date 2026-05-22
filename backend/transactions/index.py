@@ -43,6 +43,7 @@ def handler(event: dict, context) -> dict:
         # GET /?action=summary
         if method == "GET" and qs.get("action") == "summary":
             today = date.today()
+            chart_year = int(qs.get("year", today.year))
             month_start = today.replace(day=1)
             year_start = today.replace(month=1, day=1)
 
@@ -59,7 +60,7 @@ def handler(event: dict, context) -> dict:
             row = cur.fetchone()
             total_balance, income_month, expense_month, income_year, expense_year = row
 
-            # Monthly chart for current year
+            # Monthly chart for selected year
             cur.execute(f"""
                 SELECT
                     EXTRACT(MONTH FROM date)::int AS m,
@@ -68,7 +69,7 @@ def handler(event: dict, context) -> dict:
                 FROM {SCHEMA}.transactions
                 WHERE EXTRACT(YEAR FROM date) = %s AND status != 'Отменено'
                 GROUP BY m ORDER BY m
-            """, (today.year,))
+            """, (chart_year,))
             months_data = {r[0]: {"income": float(r[1]), "expense": float(r[2])} for r in cur.fetchall()}
 
             month_names = ["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"]

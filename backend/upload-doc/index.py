@@ -50,16 +50,19 @@ def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secr
     print(f"[upload-doc] PUT {url}, size={len(data)} bytes")
 
     credentials = Credentials(access_key, secret_key)
-    request = AWSRequest(method="PUT", url=url, data=data, headers={"Content-Type": content_type})
-    SigV4Auth(credentials, "s3", "ru-1").add_auth(request)
-
-    print(f"[upload-doc] Sending PUT via requests...")
-    resp_r = requests.put(url, data=data, headers=dict(request.headers), timeout=45)
-    print(f"[upload-doc] Response: {resp_r.status_code} {resp_r.text[:200]}")
-    if resp_r.status_code not in (200, 201, 204):
-        raise Exception(f"S3 PUT failed: {resp_r.status_code} {resp_r.text[:200]}")
-    print(f"[upload-doc] Upload OK: {url}")
-    return url
+    # Пробуем разные регионы — Рег.ру может требовать конкретный
+    for region in ["us-east-1", "ru-1", "ru-msk-1", "default"]:
+        try:
+            req_attempt = AWSRequest(method="PUT", url=url, data=data, headers={"Content-Type": content_type})
+            SigV4Auth(credentials, "s3", region).add_auth(req_attempt)
+            resp_try = requests.put(url, data=data, headers=dict(req_attempt.headers), timeout=45)
+            print(f"[upload-doc] region={region!r} → {resp_try.status_code} {resp_try.text[:100]}")
+            if resp_try.status_code in (200, 201, 204):
+                print(f"[upload-doc] SUCCESS with region={region!r}: {url}")
+                return url
+        except Exception as e:
+            print(f"[upload-doc] region={region!r} error: {e}")
+    raise Exception("All regions failed for Reg.ru S3")
 
 
 def upload_to_project_s3(key, data, content_type):

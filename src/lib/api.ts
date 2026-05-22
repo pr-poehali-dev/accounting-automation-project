@@ -48,8 +48,8 @@ export interface DashboardSummary {
 
 export const api = {
   transactions: {
-    summary: () =>
-      request<DashboardSummary>(`${URLS.transactions}?action=summary`),
+    summary: (year?: number) =>
+      request<DashboardSummary>(`${URLS.transactions}?action=summary${year ? `&year=${year}` : ""}`),
 
     list: (params?: { search?: string; category?: string; date_from?: string; date_to?: string }) => {
       const qs = new URLSearchParams();

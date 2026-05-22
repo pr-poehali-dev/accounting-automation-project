@@ -4,6 +4,7 @@ import { api, fmt, type DashboardSummary } from "@/lib/api";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_KEY = "dashboard_quarters_year";
+const CHART_YEAR_KEY = "dashboard_chart_year";
 
 function getQuarterDates(year: number, q: 1 | 2 | 3 | 4) {
   const ranges = { 1: ["01-01", "03-31"], 2: ["04-01", "06-30"], 3: ["07-01", "09-30"], 4: ["10-01", "12-31"] };
@@ -50,6 +51,10 @@ interface Props {
 export default function Dashboard({ onNavigate }: Props) {
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [chartYear, setChartYear] = useState<number>(() => {
+    const saved = localStorage.getItem(CHART_YEAR_KEY);
+    return saved ? parseInt(saved, 10) : CURRENT_YEAR;
+  });
 
   const [quarterYear, setQuarterYear] = useState<number>(() => {
     const saved = localStorage.getItem(YEAR_KEY);
@@ -67,10 +72,16 @@ export default function Dashboard({ onNavigate }: Props) {
   }, []);
 
   useEffect(() => {
-    api.transactions.summary()
+    setLoading(true);
+    api.transactions.summary(chartYear)
       .then(setData)
       .finally(() => setLoading(false));
-  }, []);
+  }, [chartYear]);
+
+  const handleChartYearChange = (year: number) => {
+    setChartYear(year);
+    localStorage.setItem(CHART_YEAR_KEY, String(year));
+  };
 
   useEffect(() => {
     loadQuarters(quarterYear);
@@ -122,7 +133,21 @@ export default function Dashboard({ onNavigate }: Props) {
           <div className="flex items-start sm:items-center justify-between gap-2 mb-4 sm:mb-5 flex-wrap">
             <div className="min-w-0">
               <div className="text-[10px] sm:text-xs uppercase tracking-wider sm:tracking-widest text-muted-foreground">Динамика</div>
-              <div className="text-sm font-medium mt-0.5">Доходы и расходы — {new Date().getFullYear()}</div>
+              <div className="text-sm font-medium mt-0.5 flex items-center gap-2">
+                Доходы и расходы —
+                <div className="flex items-center gap-1">
+                  <button onClick={() => handleChartYearChange(chartYear - 1)}
+                    className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                    <Icon name="ChevronLeft" size={13} />
+                  </button>
+                  <span className="font-mono-fin text-gold min-w-[36px] text-center">{chartYear}</span>
+                  <button onClick={() => handleChartYearChange(chartYear + 1)}
+                    disabled={chartYear >= CURRENT_YEAR}
+                    className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                    <Icon name="ChevronRight" size={13} />
+                  </button>
+                </div>
+              </div>
             </div>
             <div className="flex gap-3 sm:gap-4 text-[10px] sm:text-xs text-muted-foreground flex-shrink-0">
               <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gold inline-block" />Доход</span>
