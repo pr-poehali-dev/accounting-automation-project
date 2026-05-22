@@ -171,6 +171,9 @@ export default function Documents() {
   const [showNewCat, setShowNewCat] = useState(false);
   const [newCatInput, setNewCatInput] = useState("");
 
+  // Диалог подтверждения удаления
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+
   // Инлайн-редактирование статьи затрат в карточке документа
   const [editingCategory, setEditingCategory] = useState(false);
   const [savingCategory, setSavingCategory] = useState(false);
@@ -509,11 +512,17 @@ export default function Documents() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Удалить документ?")) return;
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirmId) return;
+    const id = deleteConfirmId;
+    setDeleteConfirmId(null);
     await api.documents.delete(id);
     removePreview(id);
     setDocs((prev) => prev.filter((d) => d.id !== id));
-    if (selected?.id === id) setSelected(null);
+    if (selected?.id === id) { setSelected(null); setMobileView("list"); }
   };
 
   const handleFieldUpdate = async (field: string, value: string) => {
@@ -1202,6 +1211,30 @@ export default function Documents() {
               Отдельные документы
             </button>
             <button onClick={() => setMergeDialog(null)} className="w-full text-sm text-muted-foreground py-1">
+              Отмена
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Диалог подтверждения удаления ═══ */}
+      {deleteConfirmId !== null && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-4">
+          <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-5 space-y-4 animate-fade-in">
+            <div className="text-center">
+              <div className="w-12 h-12 rounded-full bg-red-900/20 flex items-center justify-center mx-auto mb-3">
+                <Icon name="Trash2" size={22} className="text-negative" />
+              </div>
+              <div className="font-semibold text-base">Удалить документ?</div>
+              <div className="text-sm text-muted-foreground mt-1">Это действие нельзя отменить</div>
+            </div>
+            <button onClick={confirmDelete}
+              className="w-full py-3 bg-red-600 text-white font-semibold rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform">
+              <Icon name="Trash2" size={16} />
+              Удалить
+            </button>
+            <button onClick={() => setDeleteConfirmId(null)}
+              className="w-full py-2 text-sm text-muted-foreground">
               Отмена
             </button>
           </div>

@@ -49,6 +49,7 @@ export default function Transactions() {
   const [form, setForm] = useState<FormState>(emptyForm());
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -117,8 +118,15 @@ export default function Transactions() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Удалить операцию?")) return;
+  const handleDelete = (id: number) => {
+    setDeleteConfirmId(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirmId) return;
+    const id = deleteConfirmId;
+    setDeleteConfirmId(null);
+    setShowForm(false);
     setDeletingId(id);
     try {
       await api.transactions.delete(id);
@@ -384,6 +392,30 @@ export default function Transactions() {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Диалог подтверждения удаления ═══ */}
+      {deleteConfirmId !== null && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-4">
+          <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-5 space-y-4">
+            <div className="text-center">
+              <div className="w-12 h-12 rounded-full bg-red-900/20 flex items-center justify-center mx-auto mb-3">
+                <Icon name="Trash2" size={22} className="text-negative" />
+              </div>
+              <div className="font-semibold text-base">Удалить операцию?</div>
+              <div className="text-sm text-muted-foreground mt-1">Это действие нельзя отменить</div>
+            </div>
+            <button onClick={confirmDelete}
+              className="w-full py-3 bg-red-600 text-white font-semibold rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform">
+              <Icon name="Trash2" size={16} />
+              Удалить
+            </button>
+            <button onClick={() => setDeleteConfirmId(null)}
+              className="w-full py-2 text-sm text-muted-foreground">
+              Отмена
+            </button>
           </div>
         </div>
       )}
