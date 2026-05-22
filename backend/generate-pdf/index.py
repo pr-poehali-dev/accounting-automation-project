@@ -21,17 +21,17 @@ CORS = {
 
 # Надёжные зеркала TTF-шрифта с кириллицей (только .ttf, не .woff2!)
 FONT_URLS = [
-    "https://github.com/dejavu-fonts/dejavu-fonts/raw/refs/heads/master/ttf/DejaVuSans.ttf",
-    "https://raw.githubusercontent.com/Mosman1418/DejaVuSans/master/DejaVuSans.ttf",
+    "https://cdn.jsdelivr.net/npm/@fontsource/dejavu-sans@4.5.4/files/dejavu-sans-cyrillic-400-normal.ttf",
+    "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans.ttf",
     "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf",
-    "https://sourceforge.net/projects/dejavu/files/dejavu/2.37/dejavu-fonts-ttf-2.37.tar.bz2",
+    "https://raw.githubusercontent.com/Mosman1418/DejaVuSans/master/DejaVuSans.ttf",
 ]
 FONT_PATH = "/tmp/DejaVuSans.ttf"
 
 
 def download_font() -> bool:
     # Проверяем кэш: файл должен быть TTF (начинается с \x00\x01\x00\x00 или 'true' или 'OTTO')
-    if os.path.exists(FONT_PATH) and os.path.getsize(FONT_PATH) > 100_000:
+    if os.path.exists(FONT_PATH) and os.path.getsize(FONT_PATH) > 50_000:
         with open(FONT_PATH, "rb") as f:
             magic = f.read(4)
         if magic in (b'\x00\x01\x00\x00', b'true', b'OTTO', b'\x00\x00\x01\x00'):
@@ -44,14 +44,16 @@ def download_font() -> bool:
                 "User-Agent": "Mozilla/5.0",
                 "Accept": "*/*",
             })
-            with urllib.request.urlopen(req, timeout=15) as r:
+            with urllib.request.urlopen(req, timeout=20) as r:
                 data = r.read()
-            # Проверяем что это TTF, не woff2/html/архив
-            if len(data) > 100_000 and data[:4] in (b'\x00\x01\x00\x00', b'true', b'OTTO', b'\x00\x00\x01\x00'):
+            # Проверяем что это TTF
+            if len(data) > 50_000 and data[:4] in (b'\x00\x01\x00\x00', b'true', b'OTTO', b'\x00\x00\x01\x00'):
                 with open(FONT_PATH, "wb") as f:
                     f.write(data)
+                print(f"[generate-pdf] Font downloaded from {url}, size={len(data)}")
                 return True
-        except Exception:
+        except Exception as e:
+            print(f"[generate-pdf] Font URL failed {url}: {e}")
             continue
     return False
 

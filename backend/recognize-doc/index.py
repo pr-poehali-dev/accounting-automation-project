@@ -844,13 +844,32 @@ def handler(event: dict, context) -> dict:
         if auto_create_tx and amount:
             sign = -1 if tx_type == "expense" else 1
             desc = comment or f"{doc_type}: {counterparty or file_name}"
-            cur.execute(f"""INSERT INTO {SCHEMA}.transactions
-                    (date, description, category, amount, status, is_taxable, document_id)
-                VALUES (%s,%s,%s,%s,'Выполнено',TRUE,%s) RETURNING id""",
-                        (tx_date, desc[:500], category, amount * sign, doc_id))
-            row = cur.fetchone()
-            if row:
-                tx_id = row[0]
+            # Если для этого документа уже есть транзакция — обновляем её, а не создаём новую
+            if doc_id:
+                cur.execute(f"""SELECT id FROM {SCHEMA}.transactions
+                    WHERE document_id=%s AND status != 'Отменено' LIMIT 1""", (doc_id,))
+                existing = cur.fetchone()
+                if existing:
+                    tx_id = existing[0]
+                    cur.execute(f"""UPDATE {SCHEMA}.transactions
+                        SET date=%s, description=%s, category=%s, amount=%s, status='Выполнено'
+                        WHERE id=%s""", (tx_date, desc[:500], category, amount * sign, tx_id))
+                else:
+                    cur.execute(f"""INSERT INTO {SCHEMA}.transactions
+                            (date, description, category, amount, status, is_taxable, document_id)
+                        VALUES (%s,%s,%s,%s,'Выполнено',TRUE,%s) RETURNING id""",
+                                (tx_date, desc[:500], category, amount * sign, doc_id))
+                    row = cur.fetchone()
+                    if row:
+                        tx_id = row[0]
+            else:
+                cur.execute(f"""INSERT INTO {SCHEMA}.transactions
+                        (date, description, category, amount, status, is_taxable, document_id)
+                    VALUES (%s,%s,%s,%s,'Выполнено',TRUE,%s) RETURNING id""",
+                            (tx_date, desc[:500], category, amount * sign, doc_id))
+                row = cur.fetchone()
+                if row:
+                    tx_id = row[0]
 
         conn.commit()
         cur.close()
