@@ -171,6 +171,8 @@ export default function Documents() {
   // Инлайн-редактирование статьи затрат в карточке документа
   const [editingCategory, setEditingCategory] = useState(false);
   const [savingCategory, setSavingCategory] = useState(false);
+  const [newCatInline, setNewCatInline] = useState("");
+  const [addingCatInline, setAddingCatInline] = useState(false);
 
   // localStorage helpers для хранения превью между сессиями
   // Сжимаем превью до меньшего размера перед сохранением (localStorage квота ~5MB)
@@ -402,7 +404,13 @@ export default function Documents() {
     addFiles(Array.from(e.dataTransfer.files));
   };
 
-  const handleSelect = (doc: DocWithRecognition) => { setSelected(doc); setEditingCategory(false); setMobileView("detail"); };
+  const handleSelect = (doc: DocWithRecognition) => {
+    setSelected(doc);
+    setEditingCategory(false);
+    setAddingCatInline(false);
+    setNewCatInline("");
+    setMobileView("detail");
+  };
 
   const recognizeAgain = async () => {
     if (!selected) return;
@@ -924,33 +932,88 @@ export default function Documents() {
                       icon={field.icon} onSave={(v) => handleFieldUpdate(field.field, v)} />
                   ))}
 
-                  {(selected.rec_category || selected.recognition?.category) && (
-                    <div className="flex items-center gap-2 pt-1">
-                      <span className="text-xs text-muted-foreground flex-shrink-0">Статья затрат:</span>
+                  {/* Статья затрат — всегда показываем если есть транзакция */}
+                  {(selected.rec_category || selected.recognition?.category || selected.transaction_id || selected.recognition?.transaction_id) && (
+                    <div className="card-fin-raised p-3 rounded-lg">
+                      <div className="text-xs text-muted-foreground mb-2">Статья затрат</div>
                       {editingCategory ? (
-                        <div className="flex items-center gap-1.5 flex-1">
-                          <select
-                            autoFocus
-                            defaultValue={selected.rec_category || selected.recognition?.category || ""}
-                            disabled={savingCategory}
-                            onChange={(e) => { if (e.target.value !== "__new__") handleCategoryChange(e.target.value); }}
-                            onBlur={() => !savingCategory && setEditingCategory(false)}
-                            className="flex-1 min-w-0 bg-secondary border border-gold rounded px-2 py-1 text-xs text-foreground focus:outline-none"
-                          >
-                            {[...DEFAULT_CATEGORIES, ...customCategories].map((c) => (
-                              <option key={c} value={c}>{c}</option>
-                            ))}
-                          </select>
-                          {savingCategory && <Icon name="Loader" size={12} className="animate-spin text-gold flex-shrink-0" />}
+                        <div className="space-y-2">
+                          {addingCatInline ? (
+                            <div className="flex gap-1.5">
+                              <input
+                                autoFocus
+                                value={newCatInline}
+                                onChange={(e) => setNewCatInline(e.target.value)}
+                                onKeyDown={async (e) => {
+                                  if (e.key === "Enter" && newCatInline.trim()) {
+                                    const name = newCatInline.trim();
+                                    saveCustomCategory(name);
+                                    setCustomCategories(loadCustomCategories());
+                                    await handleCategoryChange(name);
+                                    setNewCatInline("");
+                                    setAddingCatInline(false);
+                                  }
+                                  if (e.key === "Escape") { setAddingCatInline(false); setNewCatInline(""); }
+                                }}
+                                placeholder="Название новой статьи..."
+                                className="flex-1 min-w-0 bg-secondary border border-gold rounded px-2.5 py-1.5 text-sm text-foreground focus:outline-none"
+                              />
+                              <button
+                                disabled={!newCatInline.trim() || savingCategory}
+                                onClick={async () => {
+                                  const name = newCatInline.trim();
+                                  if (!name) return;
+                                  saveCustomCategory(name);
+                                  setCustomCategories(loadCustomCategories());
+                                  await handleCategoryChange(name);
+                                  setNewCatInline("");
+                                  setAddingCatInline(false);
+                                }}
+                                className="px-2.5 py-1.5 bg-gold text-primary-foreground rounded text-sm disabled:opacity-50"
+                              >
+                                <Icon name="Check" size={14} />
+                              </button>
+                              <button onClick={() => { setAddingCatInline(false); setNewCatInline(""); }}
+                                className="px-2.5 py-1.5 border border-border rounded text-sm text-muted-foreground hover:text-foreground">
+                                <Icon name="X" size={14} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex gap-1.5">
+                              <select
+                                value={selected.rec_category || selected.recognition?.category || ""}
+                                disabled={savingCategory}
+                                onChange={(e) => {
+                                  if (e.target.value === "__new__") {
+                                    setAddingCatInline(true);
+                                  } else {
+                                    handleCategoryChange(e.target.value);
+                                  }
+                                }}
+                                className="flex-1 min-w-0 bg-secondary border border-gold rounded px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold"
+                              >
+                                {[...DEFAULT_CATEGORIES, ...customCategories].map((c) => (
+                                  <option key={c} value={c}>{c}</option>
+                                ))}
+                                <option value="__new__">+ Создать свою...</option>
+                              </select>
+                              {savingCategory
+                                ? <Icon name="Loader" size={16} className="animate-spin text-gold flex-shrink-0 self-center" />
+                                : <button onClick={() => { setEditingCategory(false); setAddingCatInline(false); }}
+                                    className="px-2.5 py-1.5 border border-border rounded text-sm text-muted-foreground hover:text-foreground flex-shrink-0">
+                                    <Icon name="X" size={14} />
+                                  </button>
+                              }
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <button
-                          onClick={() => setEditingCategory(true)}
-                          className="flex items-center gap-1 text-xs bg-gold/15 hover:bg-gold/25 text-gold px-2.5 py-1 rounded-full font-medium transition-colors group"
-                          title="Нажмите чтобы изменить"
+                          onClick={() => { setEditingCategory(true); setAddingCatInline(false); }}
+                          className="flex items-center gap-1.5 text-sm bg-gold/15 hover:bg-gold/25 text-gold px-3 py-1.5 rounded-lg font-medium transition-colors w-full justify-between group"
                         >
-                          {selected.rec_category || selected.recognition?.category}
-                          <Icon name="ChevronDown" size={11} className="opacity-60 group-hover:opacity-100" />
+                          <span>{selected.rec_category || selected.recognition?.category || "Не указана"}</span>
+                          <Icon name="ChevronDown" size={14} className="opacity-60 group-hover:opacity-100 flex-shrink-0" />
                         </button>
                       )}
                     </div>

@@ -68,40 +68,44 @@ def handler(event: dict, context) -> dict:
         conn = get_conn()
         cur = conn.cursor()
         s3cfg = get_s3_settings(cur)
-        if not s3cfg:
-            return resp(400, {"error": "S3 не настроен. Заполните настройки S3 в разделе Настройки."})
 
         now = datetime.now()
         folder = f"documents/{now.year}/{now.month:02d}"
         safe_name = (file_name or "document").replace(" ", "_").replace("/", "_")
         key = f"{folder}/{now.strftime('%H%M%S')}_{safe_name}"
 
-        endpoint = s3cfg["endpoint"]
-        if not endpoint.startswith("http"):
-            endpoint = "https://" + endpoint
-
-        s3 = boto3.client(
-            "s3",
-            endpoint_url=endpoint,
-            aws_access_key_id=s3cfg["access_key"],
-            aws_secret_access_key=s3cfg["secret_key"],
-            region_name="ru-1",
-            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
-        )
-
-        put_kwargs = {
-            "Bucket": s3cfg["bucket"],
-            "Key": key,
-            "Body": file_bytes,
-            "ContentType": mime_type,
-        }
-        try:
-            s3.put_object(ACL="public-read", **put_kwargs)
-        except Exception as e1:
-            print(f"put_object with ACL failed: {e1}; retrying without ACL")
-            s3.put_object(**put_kwargs)
-
-        file_url = f"{endpoint}/{s3cfg['bucket']}/{key}"
+        if s3cfg:
+            # Пользовательский S3
+            endpoint = s3cfg["endpoint"]
+            if not endpoint.startswith("http"):
+                endpoint = "https://" + endpoint
+            s3 = boto3.client(
+                "s3",
+                endpoint_url=endpoint,
+                aws_access_key_id=s3cfg["access_key"],
+                aws_secret_access_key=s3cfg["secret_key"],
+                region_name="ru-1",
+                config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+            )
+            put_kwargs = {"Bucket": s3cfg["bucket"], "Key": key, "Body": file_bytes, "ContentType": mime_type}
+            try:
+                s3.put_object(ACL="public-read", **put_kwargs)
+            except Exception as e1:
+                print(f"put_object with ACL failed: {e1}; retrying without ACL")
+                s3.put_object(**put_kwargs)
+            file_url = f"{endpoint}/{s3cfg['bucket']}/{key}"
+        else:
+            # Фоллбэк — S3 проекта (poehali.dev CDN)
+            proj_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+            s3 = boto3.client(
+                "s3",
+                endpoint_url="https://bucket.poehali.dev",
+                aws_access_key_id=proj_key,
+                aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+            )
+            s3.put_object(Bucket="files", Key=key, Body=file_bytes, ContentType=mime_type)
+            file_url = f"https://cdn.poehali.dev/projects/{proj_key}/bucket/{key}"
+            print(f"[upload-doc] Used project S3, url={file_url}")
 
         if doc_id:
             try:
