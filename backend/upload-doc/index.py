@@ -94,28 +94,34 @@ def handler(event: dict, context) -> dict:
             if not endpoint.startswith("http"):
                 endpoint = "https://" + endpoint
             try:
-                s3 = boto3.client(
-                    "s3",
-                    endpoint_url=endpoint,
-                    aws_access_key_id=s3cfg["access_key"],
-                    aws_secret_access_key=s3cfg["secret_key"],
-                    config=Config(
-                        signature_version="s3v4",
-                        s3={"addressing_style": "path"},
-                        connect_timeout=10,
-                        read_timeout=15,
-                        retries={"max_attempts": 1},
-                    ),
-                )
-                put_kwargs = {"Bucket": s3cfg["bucket"], "Key": key, "Body": file_bytes, "ContentType": mime_type}
+                import socket
+                old_timeout = socket.getdefaulttimeout()
+                socket.setdefaulttimeout(12)
                 try:
-                    s3.put_object(ACL="public-read", **put_kwargs)
-                except Exception:
-                    s3.put_object(**put_kwargs)
-                file_url = f"{endpoint}/{s3cfg['bucket']}/{key}"
-                print(f"[upload-doc] Uploaded to user Reg.ru S3: {file_url}")
+                    s3 = boto3.client(
+                        "s3",
+                        endpoint_url=endpoint,
+                        aws_access_key_id=s3cfg["access_key"],
+                        aws_secret_access_key=s3cfg["secret_key"],
+                        config=Config(
+                            signature_version="s3v4",
+                            s3={"addressing_style": "path"},
+                            connect_timeout=8,
+                            read_timeout=12,
+                            retries={"max_attempts": 1},
+                        ),
+                    )
+                    put_kwargs = {"Bucket": s3cfg["bucket"], "Key": key, "Body": file_bytes, "ContentType": mime_type}
+                    try:
+                        s3.put_object(ACL="public-read", **put_kwargs)
+                    except Exception:
+                        s3.put_object(**put_kwargs)
+                    file_url = f"{endpoint}/{s3cfg['bucket']}/{key}"
+                    print(f"[upload-doc] Uploaded to user Reg.ru S3: {file_url}")
+                finally:
+                    socket.setdefaulttimeout(old_timeout)
             except Exception as regru_err:
-                print(f"[upload-doc] Reg.ru S3 failed ({regru_err}), falling back to project S3")
+                print(f"[upload-doc] Reg.ru S3 failed ({type(regru_err).__name__}: {regru_err}), falling back to project S3")
                 file_url = upload_to_project_s3(key, file_bytes, mime_type)
         else:
             # S3 пользователя не настроен — используем S3 проекта
