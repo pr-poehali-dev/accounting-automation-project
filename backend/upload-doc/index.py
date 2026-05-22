@@ -8,6 +8,7 @@ import os
 import base64
 import hashlib
 import traceback
+import tempfile
 import psycopg2
 import boto3
 from botocore.config import Config
@@ -40,7 +41,7 @@ def get_s3_settings(cur):
 
 
 def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secret_key):
-    """Загружает файл в S3 через boto3 с path-style адресацией."""
+    """Загружает файл в S3 через upload_file() с временным файлом на диске."""
     print(f"[upload-doc] Connecting to {endpoint}, bucket={bucket}, key={key}, size={len(data)} bytes")
     s3 = boto3.client(
         "s3",
@@ -54,12 +55,20 @@ def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secr
             s3={"addressing_style": "path"},
         ),
     )
-    print(f"[upload-doc] S3 client created, calling head_bucket...")
-    s3.head_bucket(Bucket=bucket)
-    print(f"[upload-doc] head_bucket OK, calling put_object...")
-    s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)
+    print(f"[upload-doc] Writing to temp file...")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".bin") as tmp:
+        tmp.write(data)
+        tmp_path = tmp.name
+    try:
+        print(f"[upload-doc] Calling upload_file()...")
+        s3.upload_file(
+            tmp_path, bucket, key,
+            ExtraArgs={"ContentType": content_type},
+        )
+    finally:
+        os.unlink(tmp_path)
     url = f"{endpoint}/{bucket}/{key}"
-    print(f"[upload-doc] put_object OK: {url}")
+    print(f"[upload-doc] upload_file OK: {url}")
     return url
 
 
