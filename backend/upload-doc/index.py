@@ -12,7 +12,7 @@ import psycopg2
 import boto3
 from botocore.config import Config
 from datetime import datetime, timezone
-import concurrent.futures
+
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p79040548_accounting_automatio")
 CORS = {
@@ -40,17 +40,15 @@ def get_s3_settings(cur):
 
 
 def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secret_key):
-    """Загружает файл в S3 через boto3 с жёстким таймаутом 8 сек."""
+    """Загружает файл в S3 через boto3."""
     s3 = boto3.client(
         "s3",
         endpoint_url=endpoint,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
-        config=Config(connect_timeout=5, read_timeout=8, retries={"max_attempts": 1}),
+        config=Config(connect_timeout=10, read_timeout=45, retries={"max_attempts": 2}),
     )
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(s3.put_object, Bucket=bucket, Key=key, Body=data, ContentType=content_type)
-        future.result(timeout=10)
+    s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)
     url = f"{endpoint}/{bucket}/{key}"
     return url
 
