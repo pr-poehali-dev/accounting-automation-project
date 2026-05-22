@@ -780,7 +780,14 @@ export default function Documents() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-sm truncate">{doc.name}</div>
-                    <div className="text-[11px] sm:text-xs text-muted-foreground">{doc.size_label}</div>
+                    {doc.status === "done" && (doc.rec_date || doc.rec_type || doc.rec_amount) ? (
+                      <div className="text-[11px] sm:text-xs text-gold/80 truncate leading-tight mt-0.5">
+                        {[doc.rec_date, doc.rec_type, doc.rec_amount ? doc.rec_amount + " ₽" : null]
+                          .filter(Boolean).join(" · ")}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] sm:text-xs text-muted-foreground">{doc.size_label}</div>
+                    )}
                   </div>
                 </button>
                 <div className="flex items-center gap-1 flex-shrink-0">
