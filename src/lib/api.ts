@@ -129,7 +129,7 @@ export const api = {
     get: () =>
       request<{ settings: AiSettings }>(URLS.aiSettings),
 
-    update: (data: Partial<AiSettings> & { api_key?: string; gemini_api_key?: string; yandex_api_key?: string; yandex_folder_id?: string }) =>
+    update: (data: Partial<AiSettings> & { api_key?: string; gemini_api_key?: string; yandex_api_key?: string; yandex_folder_id?: string; proxyapi_key?: string; vision_provider?: string }) =>
       request<{ settings: AiSettings }>(URLS.aiSettings, {
         method: "PUT",
         body: JSON.stringify(data),
@@ -141,6 +141,8 @@ export const api = {
         error?: string;
         ai_model?: string;
         ai?: { ok: boolean; error?: string };
+        vision_provider?: string;
+        vision?: { ok: boolean | null; error?: string };
         yandex?: { ok: boolean | null; error?: string };
       }>(
         `${URLS.aiSettings}?action=test`
@@ -245,6 +247,9 @@ export interface AiSettings {
   yandex_key_masked?: string;
   yandex_folder_set?: boolean;
   yandex_folder_masked?: string;
+  proxyapi_key_set?: boolean;
+  proxyapi_key_masked?: string;
+  vision_provider?: string;
   updated_at?: string;
 }
 

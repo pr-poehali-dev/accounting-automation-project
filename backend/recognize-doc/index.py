@@ -21,7 +21,8 @@ CORS = {
     "Content-Type": "application/json",
 }
 
-ANALYSIS_PROMPT = """Ты финансовый ИИ-бухгалтер для ИП России. Тебе дан текст, извлечённый из финансового документа (накладная, чек, счёт).
+ANALYSIS_PROMPT = """Ты финансовый ИИ-бухгалтер для ИП России. Тебе дан финансовый документ (накладная, чек, счёт) — текст или фото.
+ТВОЯ ГЛАВНАЯ ЗАДАЧА — НАЙТИ ИТОГОВУЮ СУММУ. Если в документе есть таблица с колонкой «Сумма» — посмотри в самый низ таблицы строки «Итого», «Всего» и возьми число оттуда. Если итога нет — посчитай сумму всех чисел в колонке «Сумма».
 
 ПРАВИЛА КАТЕГОРИИ (category):
 - Таблица с товарами / номенклатура / позиции ТМЦ → "Закупка товара"
@@ -69,14 +70,116 @@ def get_conn():
 
 def get_keys(conn):
     cur = conn.cursor()
-    cur.execute(f"SELECT api_key, gemini_api_key, yandex_api_key, yandex_folder_id FROM {SCHEMA}.ai_settings WHERE id=1")
+    cur.execute(f"""SELECT api_key, gemini_api_key, yandex_api_key, yandex_folder_id,
+                          proxyapi_key, vision_provider
+                   FROM {SCHEMA}.ai_settings WHERE id=1""")
     row = cur.fetchone()
     cur.close()
     deepseek_key = (row[0] if row else "") or os.environ.get("DEEPSEEK_API_KEY", "")
     gemini_key = (row[1] if row else "") or os.environ.get("GEMINI_API_KEY", "")
     yandex_key = (row[2] if row else "") or os.environ.get("YANDEX_API_KEY", "")
     yandex_folder = (row[3] if row else "") or os.environ.get("YANDEX_FOLDER_ID", "")
-    return deepseek_key, gemini_key, yandex_key, yandex_folder
+    proxyapi_key = (row[4] if row else "") or os.environ.get("PROXYAPI_KEY", "")
+    vision_provider = (row[5] if row else "") or "proxyapi-gpt-4o"
+    return deepseek_key, gemini_key, yandex_key, yandex_folder, proxyapi_key, vision_provider
+
+
+# ── ProxyAPI Vision (OpenAI/Claude/Gemini через единый ключ) ─────────────
+
+PROXYAPI_BASE = "https://api.proxyapi.ru"
+
+
+def call_proxyapi_vision(images: list, file_name: str, proxyapi_key: str, vision_provider: str) -> dict:
+    """Распознавание документа через ProxyAPI с поддержкой vision (multimodal)."""
+    prompt_text = ANALYSIS_PROMPT + f"\n\nДокумент «{file_name}» ({len(images)} стр.). Внимательно прочитай все цифры в графе «Сумма» / «Итого» и верни ИТОГОВУЮ сумму в поле amount. Верни JSON."
+
+    if vision_provider.startswith("proxyapi-gpt") or vision_provider.startswith("proxyapi-gemini"):
+        # OpenAI-совместимый формат (chat completions)
+        if vision_provider.startswith("proxyapi-gpt"):
+            model_map = {
+                "proxyapi-gpt-4o": "gpt-4o",
+                "proxyapi-gpt-4o-mini": "gpt-4o-mini",
+                "proxyapi-gpt-4-turbo": "gpt-4-turbo",
+            }
+            real_model = model_map.get(vision_provider, "gpt-4o")
+            url = f"{PROXYAPI_BASE}/openai/v1/chat/completions"
+            content = [{"type": "text", "text": prompt_text}]
+            for img in images[:5]:
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{img.get('mime', 'image/jpeg')};base64,{img['b64']}"}
+                })
+            payload = {
+                "model": real_model,
+                "messages": [{"role": "user", "content": content}],
+                "max_tokens": 1000,
+                "temperature": 0.05,
+                "response_format": {"type": "json_object"},
+            }
+            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {proxyapi_key}"}
+        else:
+            # Gemini через ProxyAPI
+            model_map = {
+                "proxyapi-gemini-1.5-pro": "gemini-1.5-pro",
+                "proxyapi-gemini-2.0-flash": "gemini-2.0-flash",
+            }
+            real_model = model_map.get(vision_provider, "gemini-2.0-flash")
+            url = f"{PROXYAPI_BASE}/google/v1beta/models/{real_model}:generateContent"
+            parts = [{"text": prompt_text}]
+            for img in images[:5]:
+                parts.append({"inline_data": {"mime_type": img.get("mime", "image/jpeg"), "data": img["b64"]}})
+            payload = {
+                "contents": [{"parts": parts}],
+                "generationConfig": {"temperature": 0.05, "maxOutputTokens": 1000, "responseMimeType": "application/json"},
+            }
+            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {proxyapi_key}"}
+
+    elif vision_provider.startswith("proxyapi-claude"):
+        model_map = {
+            "proxyapi-claude-3-5-sonnet": "claude-3-5-sonnet-20241022",
+            "proxyapi-claude-3-haiku": "claude-3-haiku-20240307",
+        }
+        real_model = model_map.get(vision_provider, "claude-3-5-sonnet-20241022")
+        url = f"{PROXYAPI_BASE}/anthropic/v1/messages"
+        content = []
+        for img in images[:5]:
+            content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": img.get("mime", "image/jpeg"), "data": img["b64"]}
+            })
+        content.append({"type": "text", "text": prompt_text})
+        payload = {
+            "model": real_model,
+            "max_tokens": 1000,
+            "messages": [{"role": "user", "content": content}],
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {proxyapi_key}",
+            "anthropic-version": "2023-06-01",
+        }
+    else:
+        raise Exception(f"Unknown ProxyAPI vision provider: {vision_provider}")
+
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            resp_data = json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        body_err = e.read().decode("utf-8", errors="replace")
+        raise Exception(f"ProxyAPI HTTP {e.code}: {body_err[:300]}")
+
+    # Извлекаем текст в зависимости от провайдера
+    if vision_provider.startswith("proxyapi-gpt"):
+        text = resp_data["choices"][0]["message"]["content"]
+    elif vision_provider.startswith("proxyapi-claude"):
+        text = resp_data["content"][0]["text"]
+    else:  # gemini
+        text = resp_data["candidates"][0]["content"]["parts"][0]["text"]
+
+    result = parse_json(text)
+    result["_ocr_text"] = text[:3000]
+    return result
 
 
 # ── Yandex Vision OCR ──────────────────────────────────────────────────────
@@ -602,7 +705,7 @@ def handler(event: dict, context) -> dict:
 
     conn = get_conn()
     try:
-        deepseek_key, gemini_key, yandex_key, yandex_folder = get_keys(conn)
+        deepseek_key, gemini_key, yandex_key, yandex_folder, proxyapi_key, vision_provider = get_keys(conn)
         body = json.loads(event.get("body") or "{}")
         images_list = body.get("images", [])
         image_b64 = body.get("image_b64", "")
@@ -612,9 +715,9 @@ def handler(event: dict, context) -> dict:
         doc_id = body.get("doc_id")
         auto_create_tx = body.get("auto_create_tx", True)
 
-        if not yandex_key and not gemini_key and not deepseek_key:
+        if not yandex_key and not gemini_key and not deepseek_key and not proxyapi_key:
             return {"statusCode": 400, "headers": CORS,
-                    "body": json.dumps({"error": "Яндекс API ключ не добавлен. Зайдите в Настройки и добавьте ключ."}, ensure_ascii=False)}
+                    "body": json.dumps({"error": "Ни один API ключ не добавлен. Зайдите в Настройки и добавьте ключ ProxyAPI, Gemini или Яндекс."}, ensure_ascii=False)}
 
         fields = {}
         provider_used = "none"
@@ -640,9 +743,21 @@ def handler(event: dict, context) -> dict:
         else:
             all_imgs = []
 
-        # 1. Яндекс Vision + YandexGPT (основной)
+        # 1. ProxyAPI Vision (приоритет — самый точный для русских накладных через GPT-4o / Claude / Gemini)
+        proxyapi_failed = False
+        if proxyapi_key and vision_provider.startswith("proxyapi-") and all_imgs:
+            try:
+                fields = call_proxyapi_vision(all_imgs, file_name, proxyapi_key, vision_provider)
+                provider_used = f"proxyapi:{vision_provider}"
+            except Exception as e:
+                err_str = str(e)
+                error_details.append(f"ProxyAPI: {err_str}")
+                if "401" in err_str or "403" in err_str:
+                    proxyapi_failed = True
+
+        # 2. Яндекс Vision + YandexGPT
         yandex_auth_failed = False
-        if yandex_key and yandex_folder and all_imgs:
+        if not fields.get("doc_type") and yandex_key and yandex_folder and all_imgs:
             try:
                 fields = call_yandex(all_imgs, file_name, yandex_key, yandex_folder)
                 provider_used = "yandex"
@@ -652,12 +767,7 @@ def handler(event: dict, context) -> dict:
                 if "401" in err_str:
                     yandex_auth_failed = True
 
-        # Если Яндекс — единственный ключ и он не прошёл аутентификацию — сразу ошибка
-        if yandex_auth_failed and not gemini_key and not deepseek_key:
-            return {"statusCode": 400, "headers": CORS,
-                    "body": json.dumps({"error": "Яндекс API ключ недействителен (401). Проверьте ключ в Настройках → Нейросеть."}, ensure_ascii=False)}
-
-        # 2. Gemini Flash (запасной с vision)
+        # 3. Gemini Flash (свой ключ)
         if not fields.get("doc_type") and gemini_key and all_imgs:
             try:
                 if len(all_imgs) > 1:
@@ -668,11 +778,14 @@ def handler(event: dict, context) -> dict:
             except Exception as e:
                 error_details.append(f"Gemini: {e}")
 
-        # 3. DeepSeek text (последний fallback)
+        # 4. DeepSeek text (последний fallback — без vision)
         if not fields.get("doc_type"):
-            if yandex_auth_failed:
+            if proxyapi_failed and not yandex_key and not gemini_key:
                 return {"statusCode": 400, "headers": CORS,
-                        "body": json.dumps({"error": "Яндекс API ключ недействителен (401). Обновите ключ в Настройках → Нейросеть."}, ensure_ascii=False)}
+                        "body": json.dumps({"error": f"ProxyAPI ключ недействителен или нет доступа. Подробно: {'; '.join(error_details)}"}, ensure_ascii=False)}
+            if yandex_auth_failed and not proxyapi_key and not gemini_key:
+                return {"statusCode": 400, "headers": CORS,
+                        "body": json.dumps({"error": "Яндекс API ключ недействителен (401)."}, ensure_ascii=False)}
             fields = call_deepseek_text(file_name, deepseek_key)
             provider_used = "deepseek-text"
 

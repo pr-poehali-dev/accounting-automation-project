@@ -3,37 +3,51 @@ import Icon from "@/components/ui/icon";
 import { api, type AiSettings, type S3Settings } from "@/lib/api";
 
 const models = [
-  { id: "deepseek-chat", name: "DeepSeek V3", provider: "DeepSeek", desc: "Мощная модель, очень доступная цена", recommended: true },
-  { id: "deepseek-reasoner", name: "DeepSeek R1", provider: "DeepSeek", desc: "Режим рассуждений — лучший для аналитики" },
-  { id: "gpt-4o", name: "GPT-4o", provider: "OpenAI", desc: "Оптимальный баланс качества и скорости" },
-  { id: "gpt-4-turbo", name: "GPT-4 Turbo", provider: "OpenAI", desc: "Максимальное качество" },
-  { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic", desc: "Отличен для аналитики и длинных текстов" },
-  { id: "gemini-pro", name: "Gemini 1.5 Pro", provider: "Google", desc: "Большой контекст, мультимодальность" },
+  { id: "proxyapi-gpt-4o", name: "GPT-4o (ProxyAPI)", provider: "ProxyAPI", desc: "Лучшая модель OpenAI для русских документов", recommended: true },
+  { id: "proxyapi-gpt-4o-mini", name: "GPT-4o mini (ProxyAPI)", provider: "ProxyAPI", desc: "Дешевле, быстрее, тоже видит фото" },
+  { id: "proxyapi-claude-3-5-sonnet", name: "Claude 3.5 Sonnet (ProxyAPI)", provider: "ProxyAPI", desc: "Отлично для аналитики и таблиц" },
+  { id: "proxyapi-gemini-2.0-flash", name: "Gemini 2.0 Flash (ProxyAPI)", provider: "ProxyAPI", desc: "Очень быстрый, большой контекст" },
+  { id: "proxyapi-gemini-1.5-pro", name: "Gemini 1.5 Pro (ProxyAPI)", provider: "ProxyAPI", desc: "Максимум точности Google" },
+  { id: "proxyapi-claude-3-haiku", name: "Claude 3 Haiku (ProxyAPI)", provider: "ProxyAPI", desc: "Самый быстрый и дешёвый" },
+  { id: "deepseek-chat", name: "DeepSeek V3", provider: "DeepSeek (прямой)", desc: "Доступная цена, прямой ключ" },
+  { id: "deepseek-reasoner", name: "DeepSeek R1", provider: "DeepSeek (прямой)", desc: "Режим рассуждений" },
 ];
 
 const endpointByModel: Record<string, string> = {
+  "proxyapi-gpt-4o": "https://api.proxyapi.ru/openai/v1",
+  "proxyapi-gpt-4o-mini": "https://api.proxyapi.ru/openai/v1",
+  "proxyapi-claude-3-5-sonnet": "https://api.proxyapi.ru/anthropic/v1",
+  "proxyapi-claude-3-haiku": "https://api.proxyapi.ru/anthropic/v1",
+  "proxyapi-gemini-2.0-flash": "https://api.proxyapi.ru/google/v1beta",
+  "proxyapi-gemini-1.5-pro": "https://api.proxyapi.ru/google/v1beta",
   "deepseek-chat": "https://api.deepseek.com/v1",
   "deepseek-reasoner": "https://api.deepseek.com/v1",
-  "gpt-4o": "https://api.openai.com/v1",
-  "gpt-4-turbo": "https://api.openai.com/v1",
-  "claude-3-5-sonnet": "https://api.anthropic.com/v1",
-  "gemini-pro": "https://generativelanguage.googleapis.com/v1beta",
 };
 
 const providerGroups = [
-  { name: "DeepSeek", color: "text-blue-400", ids: ["deepseek-chat", "deepseek-reasoner"] },
-  { name: "OpenAI", color: "text-green-400", ids: ["gpt-4o", "gpt-4-turbo"] },
-  { name: "Другие", color: "text-muted-foreground", ids: ["claude-3-5-sonnet", "gemini-pro"] },
+  { name: "ProxyAPI — один ключ, все модели", color: "text-gold", ids: ["proxyapi-gpt-4o", "proxyapi-gpt-4o-mini", "proxyapi-claude-3-5-sonnet", "proxyapi-gemini-2.0-flash", "proxyapi-gemini-1.5-pro", "proxyapi-claude-3-haiku"] },
+  { name: "DeepSeek (прямой ключ)", color: "text-blue-400", ids: ["deepseek-chat", "deepseek-reasoner"] },
+];
+
+const visionProviders = [
+  { id: "proxyapi-gpt-4o", name: "GPT-4o Vision (ProxyAPI)", desc: "Лучше всех читает рукописные суммы и таблицы", recommended: true },
+  { id: "proxyapi-gpt-4o-mini", name: "GPT-4o mini Vision", desc: "Дешевле, для простых чеков" },
+  { id: "proxyapi-claude-3-5-sonnet", name: "Claude 3.5 Sonnet Vision", desc: "Отлично с таблицами и накладными" },
+  { id: "proxyapi-gemini-2.0-flash", name: "Gemini 2.0 Flash Vision", desc: "Быстрый, многостраничный" },
+  { id: "proxyapi-gemini-1.5-pro", name: "Gemini 1.5 Pro Vision", desc: "Максимум точности Google" },
+  { id: "yandex", name: "Яндекс Vision OCR (свой ключ)", desc: "Отличен для русского — нужен Folder ID" },
+  { id: "gemini", name: "Google Gemini (свой ключ)", desc: "Прямой ключ Google AI Studio" },
 ];
 
 export default function AdminSettings() {
   const [settings, setSettings] = useState<AiSettings>({
-    selected_model: "deepseek-chat",
+    selected_model: "proxyapi-gpt-4o",
     max_tokens: 4096,
     temperature: 0.3,
     system_prompt: "Ты финансовый ИИ-ассистент для B2B компании. Отвечай профессионально, кратко и по делу. Форматируй суммы в рублях.",
     api_key_set: false,
     api_key_masked: "",
+    vision_provider: "proxyapi-gpt-4o",
   });
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -45,6 +59,9 @@ export default function AdminSettings() {
   const [yandexFolderInput, setYandexFolderInput] = useState("");
   const [showYandexKey, setShowYandexKey] = useState(false);
   const [editYandexKey, setEditYandexKey] = useState(false);
+  const [proxyapiKeyInput, setProxyapiKeyInput] = useState("");
+  const [showProxyapiKey, setShowProxyapiKey] = useState(false);
+  const [editProxyapiKey, setEditProxyapiKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -123,6 +140,7 @@ export default function AdminSettings() {
         max_tokens: settings.max_tokens,
         temperature: settings.temperature,
         system_prompt: settings.system_prompt,
+        vision_provider: settings.vision_provider || "proxyapi-gpt-4o",
       };
       if (apiKeyInput.trim()) {
         payload.api_key = apiKeyInput.trim();
@@ -136,12 +154,16 @@ export default function AdminSettings() {
       if (yandexFolderInput.trim()) {
         payload.yandex_folder_id = yandexFolderInput.trim();
       }
+      if (proxyapiKeyInput.trim()) {
+        payload.proxyapi_key = proxyapiKeyInput.trim();
+      }
       const res = await api.aiSettings.update(payload);
       setSettings(res.settings);
       if (apiKeyInput.trim()) { setApiKeyInput(""); setEditKey(false); }
       if (geminiKeyInput.trim()) { setGeminiKeyInput(""); setEditGeminiKey(false); }
       if (yandexKeyInput.trim()) { setYandexKeyInput(""); setEditYandexKey(false); }
       if (yandexFolderInput.trim()) setYandexFolderInput("");
+      if (proxyapiKeyInput.trim()) { setProxyapiKeyInput(""); setEditProxyapiKey(false); }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
@@ -290,6 +312,87 @@ export default function AdminSettings() {
               readOnly
               className="w-full bg-secondary border border-border rounded px-4 py-2.5 text-sm font-mono-fin text-muted-foreground focus:outline-none"
             />
+          </div>
+
+          {/* ProxyAPI Key — единый ключ для GPT/Claude/Gemini */}
+          <div className="rounded-lg border border-gold/30 bg-gold/5 p-3 sm:p-3.5 space-y-2.5">
+            <div className="flex items-start gap-2 flex-wrap">
+              <Icon name="KeyRound" size={15} className="text-gold flex-shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-gold">ProxyAPI — один ключ на GPT, Claude и Gemini</div>
+                <div className="text-xs text-muted-foreground">Рекомендуется. Работает из России без VPN, оплата в рублях</div>
+              </div>
+              {settings.proxyapi_key_set && (
+                <span className="flex items-center gap-1 text-xs text-positive whitespace-nowrap flex-shrink-0"><Icon name="CheckCircle" size={11} />Ключ есть</span>
+              )}
+            </div>
+            <div className="relative">
+              {settings.proxyapi_key_set && !editProxyapiKey ? (
+                <div className="relative flex items-center w-full bg-secondary border border-border rounded px-3 sm:px-4 py-2.5 pr-16 sm:pr-20">
+                  <span className="text-xs sm:text-sm font-mono-fin text-foreground flex-1 truncate">
+                    {showProxyapiKey ? settings.proxyapi_key_masked : "sk-" + "●".repeat(16) + (settings.proxyapi_key_masked?.slice(-4) || "")}
+                  </span>
+                  <div className="absolute right-1.5 flex items-center gap-0.5">
+                    <button type="button" onClick={() => setShowProxyapiKey(v => !v)} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                      <Icon name={showProxyapiKey ? "EyeOff" : "Eye"} size={15} />
+                    </button>
+                    <button type="button" onClick={() => { setEditProxyapiKey(true); setShowProxyapiKey(false); }} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-gold transition-colors" title="Заменить ключ">
+                      <Icon name="Pencil" size={13} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <input
+                    autoFocus={editProxyapiKey}
+                    type={showProxyapiKey ? "text" : "password"}
+                    value={proxyapiKeyInput}
+                    onChange={(e) => setProxyapiKeyInput(e.target.value)}
+                    placeholder="sk-... (ключ из личного кабинета ProxyAPI)"
+                    className="w-full bg-secondary border border-gold/50 rounded px-3 sm:px-4 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-gold pr-16"
+                  />
+                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                    <button type="button" onClick={() => setShowProxyapiKey(v => !v)} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                      <Icon name={showProxyapiKey ? "EyeOff" : "Eye"} size={15} />
+                    </button>
+                    {editProxyapiKey && (
+                      <button type="button" onClick={() => { setEditProxyapiKey(false); setProxyapiKeyInput(""); }} className="w-8 h-8 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">
+                        <Icon name="X" size={14} />
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+            <a href="https://proxyapi.ru/" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs text-gold hover:text-yellow-300 transition-colors">
+              <Icon name="ExternalLink" size={12} /> Получить ключ на proxyapi.ru
+            </a>
+          </div>
+
+          {/* Vision провайдер — для распознавания документов */}
+          <div className="rounded-lg border border-purple-900/30 bg-purple-900/10 p-3 sm:p-3.5 space-y-2.5">
+            <div className="flex items-start gap-2 flex-wrap">
+              <Icon name="Eye" size={15} className="text-purple-400 flex-shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-purple-300">ИИ для распознавания документов (Vision)</div>
+                <div className="text-xs text-muted-foreground">Какая модель будет читать ваши фото чеков и накладных</div>
+              </div>
+            </div>
+            <select
+              value={settings.vision_provider || "proxyapi-gpt-4o"}
+              onChange={(e) => setSettings((s) => ({ ...s, vision_provider: e.target.value }))}
+              className="w-full bg-secondary border border-purple-500/40 rounded px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-purple-500"
+            >
+              {visionProviders.map((vp) => (
+                <option key={vp.id} value={vp.id}>
+                  {vp.name}{vp.recommended ? " — рекомендуется" : ""}
+                </option>
+              ))}
+            </select>
+            <div className="text-xs text-muted-foreground">
+              {visionProviders.find(v => v.id === (settings.vision_provider || "proxyapi-gpt-4o"))?.desc}
+            </div>
           </div>
 
           {/* Gemini API Key — для распознавания фото */}
@@ -444,28 +547,34 @@ export default function AdminSettings() {
                   )}
                 </div>
               </div>
-              {/* Яндекс Vision */}
-              <div className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${
-                testResult.yandex?.ok === true
-                  ? "bg-green-900/20 border-green-900/30"
-                  : testResult.yandex?.ok === null
-                  ? "bg-secondary border-border"
-                  : "bg-red-900/20 border-red-900/30"
-              }`}>
-                <Icon
-                  name={testResult.yandex?.ok === true ? "CheckCircle" : testResult.yandex?.ok === null ? "Info" : "AlertCircle"}
-                  size={15}
-                  className={`flex-shrink-0 mt-0.5 ${testResult.yandex?.ok === true ? "text-positive" : testResult.yandex?.ok === null ? "text-muted-foreground" : "text-negative"}`}
-                />
-                <div>
-                  <div className={`font-medium ${testResult.yandex?.ok === true ? "text-positive" : testResult.yandex?.ok === null ? "text-muted-foreground" : "text-negative"}`}>
-                    Яндекс Vision (распознавание): {testResult.yandex?.ok === true ? "✓ работает" : testResult.yandex?.ok === null ? "— ключ не задан" : "✗ ошибка"}
+              {/* Vision-провайдер (Yandex / ProxyAPI / Gemini) */}
+              {(() => {
+                const v = testResult.vision || testResult.yandex;
+                const vpName = visionProviders.find(p => p.id === (testResult.vision_provider || settings.vision_provider))?.name || "Vision";
+                return (
+                  <div className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm ${
+                    v?.ok === true
+                      ? "bg-green-900/20 border-green-900/30"
+                      : v?.ok === null
+                      ? "bg-secondary border-border"
+                      : "bg-red-900/20 border-red-900/30"
+                  }`}>
+                    <Icon
+                      name={v?.ok === true ? "CheckCircle" : v?.ok === null ? "Info" : "AlertCircle"}
+                      size={15}
+                      className={`flex-shrink-0 mt-0.5 ${v?.ok === true ? "text-positive" : v?.ok === null ? "text-muted-foreground" : "text-negative"}`}
+                    />
+                    <div>
+                      <div className={`font-medium ${v?.ok === true ? "text-positive" : v?.ok === null ? "text-muted-foreground" : "text-negative"}`}>
+                        Распознавание ({vpName}): {v?.ok === true ? "✓ работает" : v?.ok === null ? "— ключ не задан" : "✗ ошибка"}
+                      </div>
+                      {v?.error && (
+                        <div className="text-xs mt-0.5 text-negative/80">{v.error}</div>
+                      )}
+                    </div>
                   </div>
-                  {testResult.yandex?.error && (
-                    <div className="text-xs mt-0.5 text-negative/80">{testResult.yandex.error}</div>
-                  )}
-                </div>
-              </div>
+                );
+              })()}
             </div>
           )}
         </div>
