@@ -191,6 +191,16 @@ export const api = {
     return `${URLS.generatePdf}?${qs.toString()}`;
   },
 
+  generatePdf: (params: { date_from?: string; date_to?: string; taxable_only?: boolean; vat_rate?: string; mode?: "report" | "docs" }) => {
+    const qs = new URLSearchParams();
+    if (params.date_from) qs.set("date_from", params.date_from);
+    if (params.date_to) qs.set("date_to", params.date_to);
+    qs.set("taxable_only", params.taxable_only !== false ? "1" : "0");
+    if (params.vat_rate !== undefined) qs.set("vat_rate", params.vat_rate);
+    if (params.mode) qs.set("mode", params.mode);
+    return request<{ url: string; filename: string }>(`${URLS.generatePdf}?${qs.toString()}`);
+  },
+
   // ─── S3 Settings ────────────────────────────────────────
   s3Settings: {
     get: () => request<{ settings: S3Settings }>(URLS.s3Settings),

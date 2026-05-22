@@ -383,15 +383,27 @@ def handler(event: dict, context) -> dict:
             pdf_bytes = generate_report_pdf(txs, date_from or "2000-01-01", date_to, income_total, expense_total, vat_rate)
             filename = f"Otchet_IP_{period}.pdf"
 
+        # Сохраняем PDF в S3 и возвращаем ссылку для скачивания
+        s3 = get_s3()
+        s3_key = f"reports/{filename}"
+        proj_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        s3.put_object(
+            Bucket="files",
+            Key=s3_key,
+            Body=pdf_bytes,
+            ContentType="application/pdf",
+            ContentDisposition=f'attachment; filename="{filename}"',
+        )
+        download_url = f"https://cdn.poehali.dev/projects/{proj_key}/bucket/{s3_key}"
+        print(f"[pdf] Saved to S3: {download_url}, size={len(pdf_bytes)}")
+
         return {
             "statusCode": 200,
             "headers": {
                 **CORS,
-                "Content-Type": "application/pdf",
-                "Content-Disposition": f'attachment; filename*=UTF-8\'\'{filename}',
+                "Content-Type": "application/json",
             },
-            "body": base64.b64encode(pdf_bytes).decode("ascii"),
-            "isBase64Encoded": True,
+            "body": json.dumps({"url": download_url, "filename": filename}),
         }
     except Exception as ex:
         import traceback

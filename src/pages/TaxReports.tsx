@@ -112,9 +112,20 @@ export default function TaxReports() {
     downloadFromUrl(api.exportUrl({ type, date_from: dateFrom, date_to: dateTo }), filename);
   };
 
-  const handleDownloadPdf = (dateFrom: string, dateTo: string, name: string) => {
-    const filename = `Otchet_IP_${name.replace(/\s+/g, "_")}.pdf`;
-    downloadFromUrl(api.pdfUrl({ date_from: dateFrom, date_to: dateTo, taxable_only: true, vat_rate: vatRate }), filename);
+  const [pdfLoading, setPdfLoading] = useState<string | null>(null);
+
+  const handleDownloadPdf = async (dateFrom: string, dateTo: string, name: string, mode: "report" | "docs" = "report") => {
+    const key = mode + dateFrom + dateTo;
+    setPdfLoading(key);
+    try {
+      const res = await api.generatePdf({ date_from: dateFrom, date_to: dateTo, taxable_only: true, vat_rate: vatRate, mode });
+      downloadFromUrl(res.url, res.filename);
+    } catch (e) {
+      alert("Ошибка генерации PDF. Попробуйте ещё раз.");
+      console.error(e);
+    } finally {
+      setPdfLoading(null);
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -218,16 +229,21 @@ export default function TaxReports() {
           </button>
 
           {/* Quick download: PDF + CSV */}
-          <button onClick={() => handleDownloadPdf(curFrom, curTo, getPeriodDates().name)}
-            className="w-full py-2.5 border border-gold/40 text-gold rounded text-sm font-medium hover:bg-gold/10 transition-colors flex items-center justify-center gap-2 mb-2">
-            <Icon name="FileDown" size={15} /> Скачать PDF для налоговой
+          <button
+            onClick={() => handleDownloadPdf(curFrom, curTo, getPeriodDates().name, "report")}
+            disabled={!!pdfLoading}
+            className="w-full py-2.5 border border-gold/40 text-gold rounded text-sm font-medium hover:bg-gold/10 transition-colors flex items-center justify-center gap-2 mb-2 disabled:opacity-60">
+            {pdfLoading === ("report" + curFrom + curTo)
+              ? <><div className="w-4 h-4 rounded-full border-2 border-gold border-t-transparent animate-spin" />Формируется...</>
+              : <><Icon name="FileDown" size={15} /> Скачать PDF для налоговой</>}
           </button>
-          <button onClick={() => {
-            const filename = `Dokumenty_IP_${getPeriodDates().name.replace(/\s+/g, "_")}.pdf`;
-            downloadFromUrl(api.pdfUrl({ date_from: curFrom, date_to: curTo, taxable_only: true, vat_rate: vatRate, mode: "docs" }), filename);
-          }}
-            className="w-full py-2.5 border border-border text-muted-foreground rounded text-sm font-medium hover:text-foreground hover:border-gold/40 transition-colors flex items-center justify-center gap-2 mb-2">
-            <Icon name="Images" size={15} /> Скачать документы PDF
+          <button
+            onClick={() => handleDownloadPdf(curFrom, curTo, getPeriodDates().name, "docs")}
+            disabled={!!pdfLoading}
+            className="w-full py-2.5 border border-border text-muted-foreground rounded text-sm font-medium hover:text-foreground hover:border-gold/40 transition-colors flex items-center justify-center gap-2 mb-2 disabled:opacity-60">
+            {pdfLoading === ("docs" + curFrom + curTo)
+              ? <><div className="w-4 h-4 rounded-full border-2 border-border border-t-transparent animate-spin" />Формируется...</>
+              : <><Icon name="Images" size={15} /> Скачать документы PDF</>}
           </button>
           <div className="flex gap-2">
             <button onClick={() => handleDownloadDirect(curFrom, curTo, "операции", "transactions")}
@@ -310,9 +326,12 @@ export default function TaxReports() {
                         {/* Download buttons */}
                         <div className="flex gap-1.5 mt-2.5 flex-wrap">
                           <button
-                            onClick={() => handleDownloadPdf(df, dt, r.name)}
-                            className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded border border-gold/40 text-gold hover:bg-gold/10 transition-colors font-medium">
-                            <Icon name="FileDown" size={12} /> PDF
+                            onClick={() => handleDownloadPdf(df, dt, r.name, "report")}
+                            disabled={!!pdfLoading}
+                            className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded border border-gold/40 text-gold hover:bg-gold/10 transition-colors font-medium disabled:opacity-60">
+                            {pdfLoading === ("report" + df + dt)
+                              ? <div className="w-3 h-3 rounded-full border-2 border-gold border-t-transparent animate-spin" />
+                              : <Icon name="FileDown" size={12} />} PDF
                           </button>
                           <button
                             onClick={() => handleDownload(r, "tax")}
