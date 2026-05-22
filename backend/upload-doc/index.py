@@ -40,13 +40,18 @@ def get_s3_settings(cur):
 
 
 def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secret_key):
-    """Загружает файл в S3 через boto3."""
+    """Загружает файл в S3 через boto3 с path-style адресацией."""
     s3 = boto3.client(
         "s3",
         endpoint_url=endpoint,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
-        config=Config(connect_timeout=10, read_timeout=45, retries={"max_attempts": 2}),
+        config=Config(
+            connect_timeout=10,
+            read_timeout=45,
+            retries={"max_attempts": 1},
+            s3={"addressing_style": "path"},
+        ),
     )
     s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)
     url = f"{endpoint}/{bucket}/{key}"
