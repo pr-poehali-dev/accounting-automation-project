@@ -298,7 +298,7 @@ export default function Documents() {
     try {
       const compressedPages = await Promise.all(
         files.map(async (file) => {
-          const c = await compressImageToBase64(file, 2400, 0.92, true);
+          const c = await compressImageToBase64(file, 1600, 0.75, true);
           return { file, previewUrl: c.previewUrl, b64: c.b64, mime: c.mime };
         }),
       );
@@ -608,7 +608,7 @@ export default function Documents() {
   // ── Мультистраничный режим ──────────────────────────────
   const addPageFromFile = async (file: File) => {
     try {
-      const compressed = await compressImageToBase64(file, 2400, 0.92, true);
+      const compressed = await compressImageToBase64(file, 1600, 0.75, true);
       setPages((prev) => [...prev, { file, previewUrl: compressed.previewUrl, b64: compressed.b64, mime: compressed.mime }]);
     } catch {
       /* ignore */
