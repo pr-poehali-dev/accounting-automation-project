@@ -246,6 +246,11 @@ export default function Documents() {
           file_name: `scan_${docId}.jpg`,
           mime_type: "image/jpeg",
           doc_id: docId,
+        }).then((r) => {
+          if (r.duplicate) {
+            const dateStr = r.existing_date ? ` от ${r.existing_date.slice(0, 10)}` : "";
+            alert(`⚠️ Этот файл уже загружен!\n\nДокумент: «${r.existing_name}»${dateStr}\n\nДубликат не сохранён.`);
+          }
         }).catch(() => { /* не блокируем распознавание если S3 не настроен */ });
         result = await api.recognizeDoc({
           image_b64: compressed.b64,
@@ -648,6 +653,11 @@ export default function Documents() {
           file_name: `scan_${res.document.id}.jpg`,
           mime_type: "image/jpeg",
           doc_id: res.document.id,
+        }).then((r) => {
+          if (r.duplicate) {
+            const dateStr = r.existing_date ? ` от ${r.existing_date.slice(0, 10)}` : "";
+            alert(`⚠️ Этот файл уже загружен!\n\nДокумент: «${r.existing_name}»${dateStr}\n\nДубликат не сохранён.`);
+          }
         }).catch(() => { /* не блокируем */ });
       }
       setPages([]);

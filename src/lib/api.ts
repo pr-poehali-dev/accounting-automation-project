@@ -213,11 +213,17 @@ export const api = {
   },
 
   // ─── Upload document to S3 ──────────────────────────────
-  uploadDoc: (params: { file_b64: string; file_name: string; mime_type: string; doc_id?: number }) =>
-    request<{ ok: boolean; url: string; key: string }>(URLS.uploadDoc, {
+  uploadDoc: async (params: { file_b64: string; file_name: string; mime_type: string; doc_id?: number }): Promise<{ ok: boolean; url: string; key: string; duplicate?: boolean; existing_name?: string; existing_date?: string; existing_id?: number }> => {
+    const res = await fetch(URLS.uploadDoc, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
-    }),
+    });
+    const data = await res.json();
+    if (res.status === 409) return { ok: false, url: "", key: "", ...data };
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  },
 };
 
 // Types

@@ -139,11 +139,28 @@ def handler(event: dict, context) -> dict:
     except Exception as e:
         return resp(400, {"error": f"bad base64: {e}"})
 
+    file_hash = hashlib.md5(file_bytes).hexdigest()
+
     conn = None
     cur = None
     try:
         conn = get_conn()
         cur = conn.cursor()
+
+        cur.execute(
+            f"SELECT id, name, created_at FROM {SCHEMA}.documents WHERE file_hash=%s LIMIT 1",
+            (file_hash,)
+        )
+        dup = cur.fetchone()
+        if dup:
+            return resp(409, {
+                "duplicate": True,
+                "existing_id": dup[0],
+                "existing_name": dup[1],
+                "existing_date": str(dup[2]),
+                "message": f"Файл уже загружен: «{dup[1]}»"
+            })
+
         s3cfg = get_s3_settings(cur)
 
         now = datetime.now()
@@ -175,8 +192,8 @@ def handler(event: dict, context) -> dict:
         if doc_id:
             try:
                 cur.execute(
-                    f"UPDATE {SCHEMA}.documents SET s3_url=%s, file_key=%s WHERE id=%s",
-                    (file_url, key, doc_id)
+                    f"UPDATE {SCHEMA}.documents SET s3_url=%s, file_key=%s, file_hash=%s WHERE id=%s",
+                    (file_url, key, file_hash, doc_id)
                 )
                 conn.commit()
             except Exception as e:

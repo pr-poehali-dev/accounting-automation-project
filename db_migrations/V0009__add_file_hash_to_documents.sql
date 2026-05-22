@@ -1,0 +1,1 @@
+ALTER TABLE t_p79040548_accounting_automatio.documents ADD COLUMN IF NOT EXISTS file_hash varchar(64);
