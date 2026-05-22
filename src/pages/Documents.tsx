@@ -2,7 +2,15 @@ import { useState, useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { api, fmt, type DocRecord, type RecognizeResult } from "@/lib/api";
 
-const CATEGORIES = ["Услуги", "Аренда", "Зарплаты", "Оборудование", "Маркетинг", "Логистика", "Прочее"];
+const DEFAULT_CATEGORIES = ["Закупка товара", "Услуги", "Аренда", "Зарплаты", "Оборудование", "Маркетинг", "Логистика", "Прочее"];
+const CUSTOM_CATEGORIES_KEY = "custom_categories_v1";
+const loadCustomCategories = (): string[] => {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_CATEGORIES_KEY) || "[]"); } catch { return []; }
+};
+const saveCustomCategory = (name: string) => {
+  const existing = loadCustomCategories();
+  if (!existing.includes(name)) localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify([...existing, name]));
+};
 
 function isImage(name: string) {
   return /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(name);
@@ -154,6 +162,11 @@ export default function Documents() {
   const [showMultiModal, setShowMultiModal] = useState(false);
   const [pages, setPages] = useState<PageItem[]>([]);
   const [multiProcessing, setMultiProcessing] = useState(false);
+
+  // Кастомные категории
+  const [customCategories, setCustomCategories] = useState<string[]>(loadCustomCategories);
+  const [showNewCat, setShowNewCat] = useState(false);
+  const [newCatInput, setNewCatInput] = useState("");
 
   // localStorage helpers для хранения превью между сессиями
   // Сжимаем превью до меньшего размера перед сохранением (localStorage квота ~5MB)
@@ -523,6 +536,8 @@ export default function Documents() {
       || (selected.rec_counterparty ? `${selected.rec_type || "Оплата"} — ${selected.rec_counterparty}` : selected.rec_type || selected.name);
     setTxForm({ description: desc || "", amount: rawAmount, date: isoDate, category: rec?.category || "Прочее" });
     setTxSaved(false);
+    setShowNewCat(false);
+    setNewCatInput("");
     setShowTxModal(true);
   };
 
@@ -957,10 +972,46 @@ export default function Documents() {
               </div>
               <div>
                 <label className="text-xs text-muted-foreground block mb-1">Категория расхода</label>
-                <select value={txForm.category} onChange={(e) => setTxForm((f) => ({ ...f, category: e.target.value }))}
-                  className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold">
-                  {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-                </select>
+                {showNewCat ? (
+                  <div className="flex gap-1">
+                    <input
+                      autoFocus
+                      value={newCatInput}
+                      onChange={(e) => setNewCatInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && newCatInput.trim()) {
+                          const name = newCatInput.trim();
+                          saveCustomCategory(name);
+                          setCustomCategories(loadCustomCategories());
+                          setTxForm((f) => ({ ...f, category: name }));
+                          setNewCatInput(""); setShowNewCat(false);
+                        }
+                        if (e.key === "Escape") { setShowNewCat(false); setNewCatInput(""); }
+                      }}
+                      placeholder="Название категории..."
+                      className="flex-1 min-w-0 bg-secondary border border-gold rounded px-2 py-2 text-sm text-foreground focus:outline-none"
+                    />
+                    <button type="button" onClick={() => {
+                      if (newCatInput.trim()) {
+                        const name = newCatInput.trim();
+                        saveCustomCategory(name);
+                        setCustomCategories(loadCustomCategories());
+                        setTxForm((f) => ({ ...f, category: name }));
+                        setNewCatInput(""); setShowNewCat(false);
+                      }
+                    }} className="px-2 py-2 bg-gold text-primary-foreground rounded text-sm">
+                      <Icon name="Check" size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <select value={txForm.category} onChange={(e) => {
+                    if (e.target.value === "__new__") { setShowNewCat(true); }
+                    else setTxForm((f) => ({ ...f, category: e.target.value }));
+                  }} className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold">
+                    {[...DEFAULT_CATEGORIES, ...customCategories].map((c) => <option key={c}>{c}</option>)}
+                    <option value="__new__">+ Своя категория...</option>
+                  </select>
+                )}
               </div>
             </div>
             <div className="bg-secondary/60 rounded-lg p-3 flex items-center gap-2 text-xs text-muted-foreground">

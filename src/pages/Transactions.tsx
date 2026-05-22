@@ -2,7 +2,16 @@ import { useState, useEffect, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { api, fmt, type Transaction } from "@/lib/api";
 
-const CATEGORIES = ["Все", "Выручка", "Зарплаты", "Аренда", "Оборудование", "Маркетинг", "Логистика", "Услуги", "Прочее"];
+const DEFAULT_CATEGORIES = ["Выручка", "Закупка товара", "Зарплаты", "Аренда", "Оборудование", "Маркетинг", "Логистика", "Услуги", "Прочее"];
+const CUSTOM_CATEGORIES_KEY = "custom_categories_v1";
+
+const loadCustomCategories = (): string[] => {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_CATEGORIES_KEY) || "[]"); } catch { return []; }
+};
+const saveCustomCategory = (name: string) => {
+  const existing = loadCustomCategories();
+  if (!existing.includes(name)) localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify([...existing, name]));
+};
 const STATUSES = ["Выполнено", "В обработке", "Отменено"];
 
 interface FormState {
@@ -31,6 +40,9 @@ export default function Transactions() {
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("Все");
   const [dateFrom, setDateFrom] = useState("");
+  const [customCategories, setCustomCategories] = useState<string[]>(loadCustomCategories);
+  const [newCatInput, setNewCatInput] = useState("");
+  const [showNewCat, setShowNewCat] = useState(false);
   const [dateTo, setDateTo] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editTx, setEditTx] = useState<Transaction | null>(null);
@@ -55,6 +67,8 @@ export default function Transactions() {
     setEditTx(null);
     setForm(emptyForm());
     setError("");
+    setShowNewCat(false);
+    setNewCatInput("");
     setShowForm(true);
   };
 
@@ -155,7 +169,7 @@ export default function Transactions() {
       {/* Category filter */}
       <div className="card-fin overflow-hidden">
         <div className="flex gap-1 p-2 sm:p-2.5 border-b border-border overflow-x-auto scrollbar-none -mx-px">
-          {CATEGORIES.map((c) => (
+          {["Все", ...DEFAULT_CATEGORIES, ...customCategories].map((c) => (
             <button key={c} onClick={() => setCat(c)}
               className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-colors flex-shrink-0 ${cat === c ? "bg-gold text-primary-foreground font-medium" : "text-muted-foreground hover:text-foreground hover:bg-secondary"}`}>
               {c}
@@ -291,10 +305,46 @@ export default function Transactions() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-muted-foreground block mb-1">Категория</label>
-                  <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
-                    className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold">
-                    {CATEGORIES.filter((c) => c !== "Все").map((c) => <option key={c}>{c}</option>)}
-                  </select>
+                  {showNewCat ? (
+                    <div className="flex gap-1">
+                      <input
+                        autoFocus
+                        value={newCatInput}
+                        onChange={(e) => setNewCatInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && newCatInput.trim()) {
+                            const name = newCatInput.trim();
+                            saveCustomCategory(name);
+                            setCustomCategories(loadCustomCategories());
+                            setForm((f) => ({ ...f, category: name }));
+                            setNewCatInput(""); setShowNewCat(false);
+                          }
+                          if (e.key === "Escape") { setShowNewCat(false); setNewCatInput(""); }
+                        }}
+                        placeholder="Название..."
+                        className="flex-1 min-w-0 bg-secondary border border-gold rounded px-2 py-2 text-sm text-foreground focus:outline-none"
+                      />
+                      <button type="button" onClick={() => {
+                        if (newCatInput.trim()) {
+                          const name = newCatInput.trim();
+                          saveCustomCategory(name);
+                          setCustomCategories(loadCustomCategories());
+                          setForm((f) => ({ ...f, category: name }));
+                          setNewCatInput(""); setShowNewCat(false);
+                        }
+                      }} className="px-2 py-2 bg-gold text-primary-foreground rounded text-sm">
+                        <Icon name="Check" size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <select value={form.category} onChange={(e) => {
+                      if (e.target.value === "__new__") { setShowNewCat(true); }
+                      else setForm((f) => ({ ...f, category: e.target.value }));
+                    }} className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold">
+                      {[...DEFAULT_CATEGORIES, ...customCategories].map((c) => <option key={c}>{c}</option>)}
+                      <option value="__new__">+ Своя категория...</option>
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground block mb-1">Статус</label>
