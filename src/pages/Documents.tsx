@@ -539,13 +539,25 @@ export default function Documents() {
     if (!txForm.description || !txForm.amount) return;
     setTxSaving(true);
     try {
-      await api.transactions.create({
-        date: txForm.date,
-        description: txForm.description,
-        category: txForm.category,
-        amount: -Math.abs(Number(txForm.amount)),
-        status: "Выполнено",
-      });
+      const existingTxId = selected?.recognition?.transaction_id;
+      if (existingTxId) {
+        // Обновляем существующую транзакцию — не создаём новую
+        await api.transactions.update(existingTxId, {
+          date: txForm.date,
+          description: txForm.description,
+          category: txForm.category,
+          amount: -Math.abs(Number(txForm.amount)),
+          status: "Выполнено",
+        });
+      } else {
+        await api.transactions.create({
+          date: txForm.date,
+          description: txForm.description,
+          category: txForm.category,
+          amount: -Math.abs(Number(txForm.amount)),
+          status: "Выполнено",
+        });
+      }
       setTxSaved(true);
       setTimeout(() => { setShowTxModal(false); setTxSaved(false); }, 1500);
     } finally {
@@ -933,8 +945,8 @@ export default function Documents() {
           <div className="w-full sm:max-w-md card-fin rounded-t-2xl sm:rounded-xl p-5 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold">Создать операцию-расход</h2>
-                <div className="text-xs text-muted-foreground mt-0.5">Данные заполнены ИИ, можно исправить</div>
+                <h2 className="text-sm font-semibold">{selected?.recognition?.transaction_id ? "Исправить операцию" : "Создать операцию-расход"}</h2>
+                <div className="text-xs text-muted-foreground mt-0.5">{selected?.recognition?.transaction_id ? "Изменения сохранятся в существующей операции" : "Данные заполнены ИИ, можно исправить"}</div>
               </div>
               <button onClick={() => setShowTxModal(false)} className="text-muted-foreground hover:text-foreground"><Icon name="X" size={18} /></button>
             </div>
