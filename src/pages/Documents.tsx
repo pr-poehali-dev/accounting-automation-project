@@ -706,7 +706,7 @@ export default function Documents() {
     <div className="animate-fade-in flex flex-col gap-4">
       {/* Mobile buttons */}
       <div className="grid grid-cols-2 gap-3 lg:hidden">
-        <button onClick={() => { setPages([]); setShowMultiModal(true); }}
+        <button onClick={() => { setPages([]); setShowMultiModal(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}
           className="flex flex-col items-center justify-center gap-2 p-4 card-fin border-2 border-dashed border-gold/40 rounded-xl text-gold active:scale-95 transition-transform">
           <Icon name="Camera" size={26} />
           <span className="text-sm font-medium">Сфотографировать</span>
@@ -1244,7 +1244,7 @@ export default function Documents() {
           </div>
 
           {/* Bottom actions */}
-          <div className="px-4 pb-6 pt-2 space-y-2 border-t border-border bg-card">
+          <div className="px-4 pt-2 space-y-2 border-t border-border bg-card" style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))" }}>
             {pages.length === 0 ? (
               <button onClick={() => multiCameraRef.current?.click()}
                 className="w-full py-4 bg-gold text-primary-foreground rounded-xl text-base font-semibold flex items-center justify-center gap-3 active:scale-95 transition-transform">
