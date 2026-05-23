@@ -57,7 +57,7 @@ def upload_to_yandex(endpoint, bucket, key, data, content_type, access_key, secr
         config=Config(connect_timeout=10, read_timeout=20, retries={"max_attempts": 1}, s3={"addressing_style": "virtual"}),
         region_name="ru-central1",
     )
-    s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)
+    s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type, ACL="public-read")
     url = f"https://storage.yandexcloud.net/{bucket}/{key}"
     print(f"[upload-doc] Yandex OK: {url}")
     return url

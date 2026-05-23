@@ -204,6 +204,10 @@ export const api = {
   migrateDocsToS3: (): Promise<{ ok: boolean; total: number; migrated: number; errors_count: number; errors: { id: number; name: string; error: string }[] }> =>
     request<{ ok: boolean; total: number; migrated: number; errors_count: number; errors: { id: number; name: string; error: string }[] }>(URLS.migrateDocsToS3, { method: "POST" }),
 
+  // ─── Fix S3 ACL (public-read for all docs) ──────────────
+  fixS3Acl: (): Promise<{ ok: boolean; fixed: number; errors_count: number; errors: { id: number; key: string; error: string }[] }> =>
+    request<{ ok: boolean; fixed: number; errors_count: number; errors: { id: number; key: string; error: string }[] }>("https://functions.poehali.dev/9103f50f-35bf-436a-805f-a852b1f78e57", { method: "POST" }),
+
   // ─── Upload document to S3 ──────────────────────────────
   uploadDoc: async (params: { file_b64: string; file_name: string; mime_type: string; doc_id?: number }): Promise<{ ok: boolean; url: string; key: string; duplicate?: boolean; existing_name?: string; existing_date?: string; existing_id?: number }> => {
     const res = await fetch(URLS.uploadDoc, {

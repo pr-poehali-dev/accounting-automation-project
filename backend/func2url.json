@@ -1,4 +1,5 @@
 {
+  "fix-s3-acl": "https://functions.poehali.dev/9103f50f-35bf-436a-805f-a852b1f78e57",
   "migrate-docs-to-s3": "https://functions.poehali.dev/8625f2ed-180d-4cb3-8be1-226e2e018479",
   "docs-pdf": "https://functions.poehali.dev/cd1cab49-82a0-450c-9939-2afd35536b4b",
   "upload-doc": "https://functions.poehali.dev/cc362dea-3988-4a28-a94e-166b527ac26c",

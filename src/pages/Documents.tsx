@@ -811,9 +811,23 @@ export default function Documents() {
                 <button onClick={() => handleSelect(doc)} className="flex-1 flex items-center gap-2.5 sm:gap-3 text-left min-w-0">
                   <div className="w-9 h-9 rounded overflow-hidden flex items-center justify-center bg-secondary flex-shrink-0">
                     {(doc.previewUrl || doc.s3_url) ? (
-                      <img src={doc.previewUrl || doc.s3_url!} alt="" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display='none'; (e.currentTarget.nextElementSibling as HTMLElement)!.style.display='flex'; }} />
+                      <img
+                        src={doc.previewUrl || doc.s3_url!}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const img = e.currentTarget;
+                          img.style.display = 'none';
+                          const fallback = img.parentElement?.querySelector('.doc-thumb-fallback') as HTMLElement;
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
+                      />
                     ) : null}
-                    <span style={{display: (doc.previewUrl || doc.s3_url) ? 'none' : 'flex'}} className="w-full h-full items-center justify-center">
+                    <span
+                      className="doc-thumb-fallback w-full h-full items-center justify-center"
+                      style={{display: (doc.previewUrl || doc.s3_url) ? 'none' : 'flex'}}
+                    >
                       <Icon name={isImage(doc.name) ? "Image" : "FileText"} size={17} className="text-muted-foreground" />
                     </span>
                   </div>

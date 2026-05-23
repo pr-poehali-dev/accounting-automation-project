@@ -86,6 +86,8 @@ export default function AdminSettings() {
   const [s3TestResult, setS3TestResult] = useState<{ ok: boolean; error?: string; message?: string } | null>(null);
   const [migrating, setMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState<{ ok: boolean; migrated: number; errors_count: number; errors: { id: number; name: string; error: string }[] } | null>(null);
+  const [fixingAcl, setFixingAcl] = useState(false);
+  const [fixAclResult, setFixAclResult] = useState<{ ok: boolean; fixed: number; errors_count: number } | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -760,24 +762,44 @@ export default function AdminSettings() {
           Проверить связь S3
         </button>
         {s3.use_yandex && (
-          <button
-            onClick={async () => {
-              setMigrating(true);
-              setMigrateResult(null);
-              try {
-                const res = await api.migrateDocsToS3();
-                setMigrateResult(res);
-              } catch (e) {
-                setMigrateResult({ ok: false, migrated: 0, errors_count: 1, errors: [{ id: 0, name: "", error: e instanceof Error ? e.message : "Ошибка" }] });
-              } finally {
-                setMigrating(false);
-              }
-            }}
-            disabled={migrating || s3Saving}
-            className="px-4 py-2.5 border border-blue-900/40 text-blue-400 rounded text-sm hover:bg-blue-900/20 transition-colors flex items-center gap-2 disabled:opacity-50">
-            {migrating ? <div className="w-4 h-4 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" /> : <Icon name="ArrowUpFromLine" size={15} />}
-            Перенести файлы в Яндекс S3
-          </button>
+          <>
+            <button
+              onClick={async () => {
+                setMigrating(true);
+                setMigrateResult(null);
+                try {
+                  const res = await api.migrateDocsToS3();
+                  setMigrateResult(res);
+                } catch (e) {
+                  setMigrateResult({ ok: false, migrated: 0, errors_count: 1, errors: [{ id: 0, name: "", error: e instanceof Error ? e.message : "Ошибка" }] });
+                } finally {
+                  setMigrating(false);
+                }
+              }}
+              disabled={migrating || s3Saving}
+              className="px-4 py-2.5 border border-blue-900/40 text-blue-400 rounded text-sm hover:bg-blue-900/20 transition-colors flex items-center gap-2 disabled:opacity-50">
+              {migrating ? <div className="w-4 h-4 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" /> : <Icon name="ArrowUpFromLine" size={15} />}
+              Перенести файлы в Яндекс S3
+            </button>
+            <button
+              onClick={async () => {
+                setFixingAcl(true);
+                setFixAclResult(null);
+                try {
+                  const res = await api.fixS3Acl();
+                  setFixAclResult(res);
+                } catch (e) {
+                  setFixAclResult({ ok: false, fixed: 0, errors_count: 1 });
+                } finally {
+                  setFixingAcl(false);
+                }
+              }}
+              disabled={fixingAcl || s3Saving}
+              className="px-4 py-2.5 border border-purple-900/40 text-purple-400 rounded text-sm hover:bg-purple-900/20 transition-colors flex items-center gap-2 disabled:opacity-50">
+              {fixingAcl ? <div className="w-4 h-4 rounded-full border-2 border-purple-400 border-t-transparent animate-spin" /> : <Icon name="Eye" size={15} />}
+              Открыть доступ к фото
+            </button>
+          </>
         )}
         {s3Saved && <span className="flex items-center gap-1.5 text-xs text-positive animate-fade-in"><Icon name="CheckCircle" size={13} /> Сохранено</span>}
         {s3SaveError && <span className="flex items-center gap-1.5 text-xs text-negative animate-fade-in"><Icon name="AlertCircle" size={13} /> {s3SaveError}</span>}
@@ -786,6 +808,13 @@ export default function AdminSettings() {
             {migrateResult.ok
               ? `Перенесено: ${migrateResult.migrated} файлов${migrateResult.errors_count > 0 ? `, ошибок: ${migrateResult.errors_count}` : " — всё готово!"}`
               : `Ошибка: ${migrateResult.errors[0]?.error || "Неизвестная ошибка"}`}
+          </div>
+        )}
+        {fixAclResult && (
+          <div className={`w-full mt-2 p-3 rounded-lg border text-xs animate-fade-in ${fixAclResult.ok && fixAclResult.errors_count === 0 ? "border-green-900/30 bg-green-900/20 text-positive" : "border-yellow-900/30 bg-yellow-900/10 text-yellow-400"}`}>
+            {fixAclResult.ok
+              ? `Открыт доступ к ${fixAclResult.fixed} файлам${fixAclResult.errors_count > 0 ? `, ошибок: ${fixAclResult.errors_count}` : " — готово!"}`
+              : "Ошибка при открытии доступа"}
           </div>
         )}
       </div>
