@@ -49,6 +49,7 @@
     --surface-raised: 222 22% 13%;
     --positive: 142 76% 36%;
     --negative: 0 72% 51%;
+    --brand-blue: 199 91% 39%;
   }
 }
 
@@ -59,7 +60,7 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: "IBM Plex Sans", sans-serif;
+    font-family: "Inter", "IBM Plex Sans", sans-serif;
     font-size: 14px;
     line-height: 1.6;
   }

@@ -59,14 +59,18 @@ const App = () => {
           transition-transform duration-200
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
         `}>
-          <div className="px-5 py-5 border-b border-sidebar-border">
-            <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded bg-gold flex items-center justify-center flex-shrink-0">
-                <Icon name="BarChart3" size={15} className="text-primary-foreground" />
+          <div className="px-4 py-4 border-b border-sidebar-border">
+            <div className="flex items-center gap-3 group cursor-default">
+              {/* BG Logo mark — hexagon monogram */}
+              <div className="flex-shrink-0 w-9 h-9 relative transition-transform duration-300 group-hover:scale-105">
+                <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <polygon points="18,2 33,10 33,26 18,34 3,26 3,10" fill="#0F172A" stroke="#0284C7" strokeWidth="1.5"/>
+                  <text x="18" y="23" textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="12" fill="#ffffff" letterSpacing="-0.5">BG</text>
+                </svg>
               </div>
-              <div>
-                <div className="text-sm font-semibold leading-tight">ФинансПро</div>
-                <div className="text-xs text-muted-foreground">B2B Платформа</div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold leading-tight tracking-tight text-foreground">Butsky Group</div>
+                <div className="text-[11px] text-[#0284C7] font-medium tracking-wide">Финансовые технологии</div>
               </div>
             </div>
           </div>
@@ -100,16 +104,13 @@ const App = () => {
 
           <div className="p-4 border-t border-sidebar-border">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-gold/20 flex items-center justify-center flex-shrink-0">
-                <Icon name="User" size={14} className="text-gold" />
+              <div className="w-8 h-8 rounded-full bg-[#0284C7]/15 border border-[#0284C7]/30 flex items-center justify-center flex-shrink-0">
+                <span className="text-xs font-bold text-[#0284C7]">ДБ</span>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium truncate">Администратор</div>
-                <div className="text-xs text-muted-foreground truncate">admin@company.ru</div>
+                <div className="text-xs font-semibold truncate">Д. А. Буцкий</div>
+                <div className="text-[11px] text-muted-foreground truncate">Butsky Group</div>
               </div>
-              <button className="text-muted-foreground hover:text-foreground transition-colors">
-                <Icon name="LogOut" size={13} />
-              </button>
             </div>
           </div>
         </aside>
@@ -142,11 +143,11 @@ const App = () => {
                 </button>
                 <div className="h-5 w-px bg-border mx-1" />
               </div>
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-secondary transition-colors cursor-pointer">
-                <div className="w-6 h-6 rounded-full bg-gold flex items-center justify-center flex-shrink-0">
-                  <span className="text-xs font-semibold text-primary-foreground">А</span>
+              <div className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-secondary transition-all duration-300 cursor-pointer">
+                <div className="w-6 h-6 rounded-full bg-[#0284C7]/20 border border-[#0284C7]/40 flex items-center justify-center flex-shrink-0">
+                  <span className="text-[10px] font-bold text-[#0284C7]">ДБ</span>
                 </div>
-                <span className="text-xs hidden sm:block">Администратор</span>
+                <span className="text-xs hidden sm:block font-medium">Д. А. Буцкий</span>
               </div>
             </div>
           </header>

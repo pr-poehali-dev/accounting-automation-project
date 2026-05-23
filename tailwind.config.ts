@@ -20,10 +20,12 @@ export default {
 		},
 		extend: {
 			fontFamily: {
-				sans: ['IBM Plex Sans', 'sans-serif'],
+				sans: ['Inter', 'IBM Plex Sans', 'sans-serif'],
 				mono: ['IBM Plex Mono', 'monospace'],
 			},
 			colors: {
+				'cyber-blue': '#0284C7',
+				'deep-navy': '#0F172A',
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
 				ring: 'hsl(var(--ring))',
