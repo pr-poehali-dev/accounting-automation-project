@@ -796,8 +796,13 @@ export default function Documents() {
             {docs.map((doc) => (
               <div key={doc.id} className={`flex items-center gap-2.5 sm:gap-3 p-2.5 sm:p-3 rounded-lg cursor-pointer transition-all mb-1 ${selected?.id === doc.id ? "bg-gold/10 border border-gold/30" : "hover:bg-secondary border border-transparent"}`}>
                 <button onClick={() => handleSelect(doc)} className="flex-1 flex items-center gap-2.5 sm:gap-3 text-left min-w-0">
-                  <div className="w-9 h-9 rounded flex items-center justify-center bg-secondary flex-shrink-0">
-                    <Icon name={isImage(doc.name) ? "Image" : "FileText"} size={17} className="text-muted-foreground" />
+                  <div className="w-9 h-9 rounded overflow-hidden flex items-center justify-center bg-secondary flex-shrink-0">
+                    {(doc.previewUrl || doc.s3_url) ? (
+                      <img src={doc.previewUrl || doc.s3_url!} alt="" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display='none'; (e.currentTarget.nextElementSibling as HTMLElement)!.style.display='flex'; }} />
+                    ) : null}
+                    <span style={{display: (doc.previewUrl || doc.s3_url) ? 'none' : 'flex'}} className="w-full h-full items-center justify-center">
+                      <Icon name={isImage(doc.name) ? "Image" : "FileText"} size={17} className="text-muted-foreground" />
+                    </span>
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-sm truncate">{doc.name}</div>
