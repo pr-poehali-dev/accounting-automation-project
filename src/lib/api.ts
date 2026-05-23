@@ -5,7 +5,6 @@ const URLS = {
   aiSettings: "https://functions.poehali.dev/2d22aebf-09ca-46d6-98b1-a36a7556d511",
   aiChat: "https://functions.poehali.dev/1700fcd4-35b3-4a49-8472-292f760d2f96",
   recognizeDoc: "https://functions.poehali.dev/912d2561-eabf-42bf-9a5f-29747a113c4e",
-  exportReport: "https://functions.poehali.dev/3ae9ddec-fe7b-4b28-be0b-6889bd9cfcd6",
   s3Settings: "https://functions.poehali.dev/994a3fe5-ea96-4bca-bad7-09a990b48212",
   uploadDoc: "https://functions.poehali.dev/cc362dea-3988-4a28-a94e-166b527ac26c",
   generatePdf: "https://functions.poehali.dev/fff58902-afa3-4eb6-8403-6975c2c5ce0b",
@@ -173,25 +172,6 @@ export const api = {
       body: JSON.stringify(params),
     }),
 
-  // ─── Export / Download ──────────────────────────────────
-  exportUrl: (params: { type: "transactions" | "tax"; date_from?: string; date_to?: string; category?: string }) => {
-    const qs = new URLSearchParams({ type: params.type });
-    if (params.date_from) qs.set("date_from", params.date_from);
-    if (params.date_to) qs.set("date_to", params.date_to);
-    if (params.category) qs.set("category", params.category);
-    return `${URLS.exportReport}?${qs.toString()}`;
-  },
-
-  // ─── PDF Report ─────────────────────────────────────────
-  pdfUrl: (params: { date_from?: string; date_to?: string; taxable_only?: boolean; vat_rate?: string; mode?: "report" | "docs" }) => {
-    const qs = new URLSearchParams();
-    if (params.date_from) qs.set("date_from", params.date_from);
-    if (params.date_to) qs.set("date_to", params.date_to);
-    qs.set("taxable_only", params.taxable_only !== false ? "1" : "0");
-    if (params.vat_rate !== undefined) qs.set("vat_rate", params.vat_rate);
-    if (params.mode) qs.set("mode", params.mode);
-    return `${URLS.generatePdf}?${qs.toString()}`;
-  },
 
   generatePdf: (params: { date_from?: string; date_to?: string; taxable_only?: boolean; vat_rate?: string; mode?: "report" | "docs" }) => {
     const qs = new URLSearchParams();
