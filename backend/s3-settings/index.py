@@ -75,11 +75,12 @@ def handler(event: dict, context) -> dict:
                     config=Config(
                         connect_timeout=8,
                         read_timeout=10,
-                        s3={"addressing_style": "path"},
+                        s3={"addressing_style": "virtual"},
                     ),
                     region_name="ru-central1",
                 )
-                client.head_bucket(Bucket=s["bucket_name"])
+                # list_objects надёжнее чем head_bucket для проверки доступа
+                client.list_objects_v2(Bucket=s["bucket_name"], MaxKeys=1)
                 return resp(200, {"ok": True, "message": f"Подключение к бакету «{s['bucket_name']}» успешно!"})
             except ClientError as e:
                 code = e.response["Error"]["Code"]

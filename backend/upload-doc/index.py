@@ -54,7 +54,7 @@ def upload_to_yandex(endpoint, bucket, key, data, content_type, access_key, secr
         endpoint_url=endpoint,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
-        config=Config(connect_timeout=10, read_timeout=20, retries={"max_attempts": 1}, s3={"addressing_style": "path"}),
+        config=Config(connect_timeout=10, read_timeout=20, retries={"max_attempts": 1}, s3={"addressing_style": "virtual"}),
         region_name="ru-central1",
     )
     s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)
