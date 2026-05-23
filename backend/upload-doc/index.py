@@ -10,7 +10,6 @@ import hashlib
 import traceback
 import psycopg2
 import boto3
-import requests
 from botocore.config import Config
 from datetime import datetime, timezone
 
@@ -41,8 +40,8 @@ def get_s3_settings(cur):
 
 
 def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secret_key):
-    """Загружает файл через presigned URL чанками."""
-    print(f"[upload-doc] Generating presigned URL, size={len(data)}")
+    """Загружает файл через S3 multipart upload."""
+    print(f"[upload-doc] Starting multipart upload to {endpoint}/{bucket}/{key}, size={len(data)}")
     s3 = boto3.client(
         "s3",
         endpoint_url=endpoint,
@@ -50,36 +49,38 @@ def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secr
         aws_secret_access_key=secret_key,
         config=Config(
             connect_timeout=10,
-            read_timeout=45,
+            read_timeout=50,
             retries={"max_attempts": 1},
             s3={"addressing_style": "path"},
         ),
         region_name="us-east-1",
     )
-    presigned_url = s3.generate_presigned_url(
-        "put_object",
-        Params={"Bucket": bucket, "Key": key, "ContentType": content_type},
-        ExpiresIn=300,
-    )
-    print(f"[upload-doc] Presigned URL OK, uploading via chunked transfer...")
 
-    # Чанкованная передача — обходит зависание при Content-Length
-    def chunked(data, chunk_size=65536):
-        for i in range(0, len(data), chunk_size):
-            yield data[i:i + chunk_size]
+    # Инициируем multipart upload
+    mpu = s3.create_multipart_upload(Bucket=bucket, Key=key, ContentType=content_type)
+    upload_id = mpu["UploadId"]
+    print(f"[upload-doc] Multipart upload started, upload_id={upload_id}")
 
-    session = requests.Session()
-    resp_r = session.put(
-        presigned_url,
-        data=chunked(data),
-        headers={"Content-Type": content_type, "Transfer-Encoding": "chunked"},
-        timeout=45,
-    )
-    print(f"[upload-doc] PUT response: {resp_r.status_code} {resp_r.text[:200]}")
-    if resp_r.status_code not in (200, 201, 204):
-        raise Exception(f"S3 PUT failed: {resp_r.status_code} {resp_r.text[:200]}")
+    try:
+        # Загружаем единственную часть (весь файл)
+        part = s3.upload_part(
+            Bucket=bucket, Key=key,
+            UploadId=upload_id, PartNumber=1,
+            Body=data,
+        )
+        print(f"[upload-doc] Part 1 uploaded, ETag={part['ETag']}")
+
+        # Завершаем multipart upload
+        s3.complete_multipart_upload(
+            Bucket=bucket, Key=key, UploadId=upload_id,
+            MultipartUpload={"Parts": [{"PartNumber": 1, "ETag": part["ETag"]}]},
+        )
+    except Exception as e:
+        s3.abort_multipart_upload(Bucket=bucket, Key=key, UploadId=upload_id)
+        raise e
+
     url = f"{endpoint}/{bucket}/{key}"
-    print(f"[upload-doc] Upload OK: {url}")
+    print(f"[upload-doc] Multipart upload OK: {url}")
     return url
 
 
