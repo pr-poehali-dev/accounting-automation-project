@@ -4,28 +4,32 @@ import { api, fmt, type DashboardSummary } from "@/lib/api";
 
 const BANNERS = [
   {
-    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/b077870a-e999-40a2-9c49-7d0c32e63655.jpg",
+    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/e7b21a8b-6a13-4499-8813-0c6f8361e390.jpg",
     tag: "Butsky Group",
     title: "Команда профессионалов\nна страже вашего учёта",
     sub: "Интеллектуальная автоматизация учёта, созданная экспертом",
+    emblem: "flag",
   },
   {
-    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/37ef6031-73c3-4eb8-83c4-ba3eb901784c.jpg",
+    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/40fb5983-5ead-4755-bd67-d8b3b24f4c48.jpg",
     tag: "Бухучёт с телефона",
     title: "Сфотографировал —\nдокумент уже в системе",
     sub: "ИИ распознаёт накладные, чеки и счета за секунды",
+    emblem: "flag",
   },
   {
-    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/1bbe8d14-d6fd-4586-aba6-77d734c972d0.jpg",
+    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/21d744fc-102d-4f89-9c13-1bba5d829503.jpg",
     tag: "Автоматический расчёт",
     title: "Налоги и отчёты\nсчитаются сами",
     sub: "Полная налоговая отчётность формируется в один клик",
+    emblem: "coa",
   },
   {
-    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/e2d810e1-f23a-4d9b-b249-6c0c15262927.jpg",
+    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/57041079-6711-406c-bb01-ee7b320b9379.jpg",
     tag: "BG · Butsky Group",
     title: "Максимальная простота\nфинансового учёта",
     sub: "Авторская программа Д. А. Буцкого — надёжно, быстро, без лишнего",
+    emblem: "coa",
   },
 ];
 
@@ -67,6 +71,50 @@ function HeroBanner() {
       {/* Gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-r from-[#0F172A]/90 via-[#0F172A]/60 to-transparent" />
       <div className="absolute inset-0 bg-gradient-to-t from-[#0F172A]/70 via-transparent to-transparent" />
+
+      {/* Флаг / Герб России — правый верхний угол */}
+      <div
+        className="absolute top-4 right-4 z-10 transition-opacity duration-300"
+        style={{ opacity: animating ? 0 : 1 }}
+      >
+        {b.emblem === "flag" && (
+          <div className="flex flex-col overflow-hidden rounded shadow-lg" style={{ width: 38, height: 26 }}>
+            <div style={{ flex: 1, background: "#FFFFFF" }} />
+            <div style={{ flex: 1, background: "#0039A6" }} />
+            <div style={{ flex: 1, background: "#D52B1E" }} />
+          </div>
+        )}
+        {b.emblem === "coa" && (
+          <svg width="32" height="36" viewBox="0 0 100 112" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.5))" }}>
+            {/* Щит */}
+            <path d="M50 108 C50 108 8 85 8 48 L8 14 L50 4 L92 14 L92 48 C92 85 50 108 50 108Z" fill="#D52B1E" stroke="#C8A000" strokeWidth="2.5"/>
+            {/* Двуглавый орёл — упрощённый */}
+            <ellipse cx="50" cy="54" rx="18" ry="22" fill="#C8A000"/>
+            {/* Левая голова */}
+            <ellipse cx="33" cy="36" rx="9" ry="10" fill="#C8A000"/>
+            <circle cx="29" cy="31" r="4" fill="#C8A000"/>
+            {/* Правая голова */}
+            <ellipse cx="67" cy="36" rx="9" ry="10" fill="#C8A000"/>
+            <circle cx="71" cy="31" r="4" fill="#C8A000"/>
+            {/* Короны */}
+            <path d="M24 25 L27 19 L30 25" fill="#C8A000" stroke="#C8A000" strokeWidth="1"/>
+            <path d="M66 25 L69 19 L72 25" fill="#C8A000" stroke="#C8A000" strokeWidth="1"/>
+            <path d="M44 22 L50 15 L56 22" fill="#C8A000" stroke="#C8A000" strokeWidth="1"/>
+            {/* Крылья */}
+            <path d="M32 48 Q15 42 12 55 Q20 58 32 54Z" fill="#C8A000"/>
+            <path d="M68 48 Q85 42 88 55 Q80 58 68 54Z" fill="#C8A000"/>
+            {/* Скипетр и держава */}
+            <line x1="50" y1="42" x2="50" y2="72" stroke="#C8A000" strokeWidth="2.5"/>
+            <circle cx="50" cy="40" r="3" fill="#C8A000"/>
+            {/* Щиток на груди */}
+            <rect x="43" y="50" width="14" height="16" rx="2" fill="#D52B1E" stroke="#C8A000" strokeWidth="1.5"/>
+            <line x1="50" y1="52" x2="50" y2="64" stroke="#C8A000" strokeWidth="1.5"/>
+            {/* Лапы */}
+            <path d="M36 68 Q28 72 26 80" stroke="#C8A000" strokeWidth="2" fill="none"/>
+            <path d="M64 68 Q72 72 74 80" stroke="#C8A000" strokeWidth="2" fill="none"/>
+          </svg>
+        )}
+      </div>
 
       {/* Content */}
       <div
