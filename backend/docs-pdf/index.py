@@ -60,17 +60,49 @@ def compress_image(url: str):
         return None
 
 
-def save_to_cdn(pdf_bytes: bytes, filename: str) -> str:
-    proj_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
-    s3 = boto3.client(
-        "s3",
-        endpoint_url="https://bucket.poehali.dev",
-        aws_access_key_id=proj_key,
-        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
-    )
+def get_yandex_s3_cfg(conn):
+    """Читает настройки Яндекс S3 из БД."""
+    cur = conn.cursor()
+    try:
+        cur.execute(f"SELECT bucket_name, endpoint_url, access_key, secret_key, use_yandex FROM {SCHEMA}.s3_settings WHERE id=1")
+        row = cur.fetchone()
+        if not row or not row[4] or not row[2]:
+            return None
+        endpoint = (row[1] or "https://storage.yandexcloud.net").rstrip("/")
+        if not endpoint.startswith("http"):
+            endpoint = "https://" + endpoint
+        return {"bucket": row[0], "endpoint": endpoint, "access_key": row[2], "secret_key": row[3]}
+    finally:
+        cur.close()
+
+
+def save_pdf(pdf_bytes: bytes, filename: str, yc) -> str:
+    """Сохраняет PDF в Яндекс S3 или CDN поехали.dev."""
+    from botocore.config import Config
     key = f"reports/{filename}"
-    s3.put_object(Bucket="files", Key=key, Body=pdf_bytes, ContentType="application/pdf")
-    return f"https://cdn.poehali.dev/projects/{proj_key}/bucket/{key}"
+    if yc:
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=yc["endpoint"],
+            aws_access_key_id=yc["access_key"],
+            aws_secret_access_key=yc["secret_key"],
+            config=Config(s3={"addressing_style": "virtual"}),
+            region_name="ru-central1",
+        )
+        s3.put_object(Bucket=yc["bucket"], Key=key, Body=pdf_bytes, ContentType="application/pdf",
+                      ContentDisposition=f'attachment; filename="{filename}"')
+        url = f"{yc['endpoint']}/{yc['bucket']}/{key}"
+        print(f"[docs-pdf] Saved to Yandex S3: {url}")
+        return url
+    else:
+        proj_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        s3 = boto3.client("s3", endpoint_url="https://bucket.poehali.dev",
+                          aws_access_key_id=proj_key,
+                          aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", ""))
+        s3.put_object(Bucket="files", Key=key, Body=pdf_bytes, ContentType="application/pdf")
+        url = f"https://cdn.poehali.dev/projects/{proj_key}/bucket/{key}"
+        print(f"[docs-pdf] Saved to CDN: {url}")
+        return url
 
 
 def generate_pdf(docs: list) -> bytes:
@@ -137,7 +169,7 @@ def generate_pdf(docs: list) -> bytes:
 
 
 def handler(event: dict, context) -> dict:
-    """Генерирует PDF с фото документов, сохраняет в CDN и возвращает URL для скачивания."""
+    """Генерирует PDF с фото документов, сохраняет в Яндекс S3 и возвращает URL для скачивания."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
@@ -148,6 +180,8 @@ def handler(event: dict, context) -> dict:
     cur = conn.cursor()
 
     try:
+        yc = get_yandex_s3_cfg(conn)
+
         if ids_param:
             id_list = [int(x.strip()) for x in ids_param.split(",") if x.strip().isdigit()]
             if not id_list:
@@ -177,14 +211,13 @@ def handler(event: dict, context) -> dict:
     if not docs:
         return resp(200, {"ok": False, "error": "Нет документов для генерации PDF"})
 
-    print(f"[docs-pdf] Building PDF for {len(docs)} docs")
+    print(f"[docs-pdf] Building PDF for {len(docs)} docs, yandex={'yes' if yc else 'no'}")
     pdf_bytes = generate_pdf(docs)
 
     now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"Dokumenty_{now_str}.pdf"
-    url = save_to_cdn(pdf_bytes, filename)
+    url = save_pdf(pdf_bytes, filename, yc)
     pdf_bytes = None
     gc.collect()
 
-    print(f"[docs-pdf] Saved {filename}, url={url}")
     return resp(200, {"ok": True, "url": url, "filename": filename, "count": len(docs)})

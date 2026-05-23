@@ -30,12 +30,71 @@ FONT_FALLBACK_URLS = [
 
 
 def get_s3():
+    """CDN поехали.dev — используется только для шрифта."""
     return boto3.client(
         "s3",
         endpoint_url="https://bucket.poehali.dev",
         aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
     )
+
+
+def get_yandex_s3_cfg():
+    """Читает настройки Яндекс S3 из БД. Возвращает dict или None."""
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(f"SELECT bucket_name, endpoint_url, access_key, secret_key, use_yandex FROM {SCHEMA}.s3_settings WHERE id=1")
+        row = cur.fetchone()
+        if not row or not row[4] or not row[2]:
+            return None
+        endpoint = (row[1] or "https://storage.yandexcloud.net").rstrip("/")
+        if not endpoint.startswith("http"):
+            endpoint = "https://" + endpoint
+        return {"bucket": row[0], "endpoint": endpoint, "access_key": row[2], "secret_key": row[3]}
+    finally:
+        cur.close()
+        conn.close()
+
+
+def save_pdf(pdf_bytes: bytes, filename: str) -> str:
+    """Сохраняет PDF: сначала пробует Яндекс S3, иначе — CDN поехали."""
+    from botocore.config import Config
+    yc = get_yandex_s3_cfg()
+    if yc:
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=yc["endpoint"],
+            aws_access_key_id=yc["access_key"],
+            aws_secret_access_key=yc["secret_key"],
+            config=Config(s3={"addressing_style": "virtual"}),
+            region_name="ru-central1",
+        )
+        key = f"reports/{filename}"
+        s3.put_object(
+            Bucket=yc["bucket"],
+            Key=key,
+            Body=pdf_bytes,
+            ContentType="application/pdf",
+            ContentDisposition=f'attachment; filename="{filename}"',
+        )
+        url = f"{yc['endpoint']}/{yc['bucket']}/{key}"
+        print(f"[pdf] Saved to Yandex S3: {url}, size={len(pdf_bytes)}")
+        return url
+    else:
+        s3 = get_s3()
+        key = f"reports/{filename}"
+        proj_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        s3.put_object(
+            Bucket="files",
+            Key=key,
+            Body=pdf_bytes,
+            ContentType="application/pdf",
+            ContentDisposition=f'attachment; filename="{filename}"',
+        )
+        url = f"https://cdn.poehali.dev/projects/{proj_key}/bucket/{key}"
+        print(f"[pdf] Saved to Poehali CDN: {url}, size={len(pdf_bytes)}")
+        return url
 
 
 def is_valid_ttf(data: bytes) -> bool:
@@ -383,19 +442,8 @@ def handler(event: dict, context) -> dict:
             pdf_bytes = generate_report_pdf(txs, date_from or "2000-01-01", date_to, income_total, expense_total, vat_rate)
             filename = f"Otchet_IP_{period}.pdf"
 
-        # Сохраняем PDF в S3 и возвращаем ссылку для скачивания
-        s3 = get_s3()
-        s3_key = f"reports/{filename}"
-        proj_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
-        s3.put_object(
-            Bucket="files",
-            Key=s3_key,
-            Body=pdf_bytes,
-            ContentType="application/pdf",
-            ContentDisposition=f'attachment; filename="{filename}"',
-        )
-        download_url = f"https://cdn.poehali.dev/projects/{proj_key}/bucket/{s3_key}"
-        print(f"[pdf] Saved to S3: {download_url}, size={len(pdf_bytes)}")
+        # Сохраняем PDF в Яндекс S3 (или CDN если Яндекс не настроен)
+        download_url = save_pdf(pdf_bytes, filename)
 
         return {
             "statusCode": 200,
