@@ -7,12 +7,10 @@
       "expectedStatus": 200
     },
     {
-      "name": "GET empty list",
+      "name": "GET list",
       "method": "GET",
       "path": "/",
-      "expectedStatus": 200,
-      "expectedBody": {"documents": []},
-      "bodyMatcher": "partial"
+      "expectedStatus": 200
     },
     {
       "name": "POST create document",

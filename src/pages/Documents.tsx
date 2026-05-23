@@ -164,6 +164,10 @@ export default function Documents() {
   const [pages, setPages] = useState<PageItem[]>([]);
   const [multiProcessing, setMultiProcessing] = useState(false);
 
+  // Загрузка файла в S3 (показывается лоудер, блокирует интерфейс)
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
+
   // Диалог объединения нескольких фото
   const [mergeDialog, setMergeDialog] = useState<{ images: File[]; nonImages: File[] } | null>(null);
 
@@ -236,26 +240,22 @@ export default function Documents() {
 
   useEffect(() => { loadDocs(); }, []);
 
-  const recognizeFile = async (docId: number, file: File, previewUrl?: string) => {
+  const recognizeFile = async (docId: number, file: File, previewUrl?: string, alreadyUploadedUrl?: string) => {
     setDocs((prev) => prev.map((d) => d.id === docId ? { ...d, recognizing: true, previewUrl } : d));
     setSelected((prev) => prev?.id === docId ? { ...prev, recognizing: true, previewUrl } : prev);
     try {
       let result: RecognizeResult;
       if (isImage(file.name)) {
-        // CamScanner-обработка: высокое разрешение, контраст, резкость
         const compressed = await compressImageToBase64(file, 2400, 0.92, true);
-        // Параллельно загружаем обработанное изображение в S3, чтобы можно было поделиться
-        api.uploadDoc({
-          file_b64: compressed.b64,
-          file_name: `scan_${docId}.jpg`,
-          mime_type: "image/jpeg",
-          doc_id: docId,
-        }).then((r) => {
-          if (r.duplicate) {
-            const dateStr = r.existing_date ? ` от ${r.existing_date.slice(0, 10)}` : "";
-            alert(`⚠️ Этот файл уже загружен!\n\nДокумент: «${r.existing_name}»${dateStr}\n\nДубликат не сохранён.`);
-          }
-        }).catch(() => { /* не блокируем распознавание если S3 не настроен */ });
+        // Загружаем в S3 только если ещё не было загружено
+        if (!alreadyUploadedUrl) {
+          api.uploadDoc({
+            file_b64: compressed.b64,
+            file_name: `scan_${docId}.jpg`,
+            mime_type: "image/jpeg",
+            doc_id: docId,
+          }).catch(() => {});
+        }
         result = await api.recognizeDoc({
           image_b64: compressed.b64,
           mime_type: compressed.mime,
@@ -316,6 +316,8 @@ export default function Documents() {
   };
 
   const addFilesAsMultiPage = async (files: File[]) => {
+    setUploading(true);
+    setUploadProgress("Загружаю файл в хранилище...");
     try {
       const compressedPages = await Promise.all(
         files.map(async (file) => {
@@ -327,10 +329,29 @@ export default function Documents() {
       const sizeMb = (totalSize / 1024 / 1024).toFixed(1);
       const docName = `Накладная (${compressedPages.length} стр.)`;
 
+      // 1. Сначала загружаем первую страницу в S3
+      let s3Url: string | undefined;
+      if (compressedPages[0]?.b64) {
+        const uploadRes = await api.uploadDoc({
+          file_b64: compressedPages[0].b64,
+          file_name: `scan_${Date.now()}.jpg`,
+          mime_type: "image/jpeg",
+        });
+        if (uploadRes.duplicate) {
+          const dateStr = uploadRes.existing_date ? ` от ${uploadRes.existing_date.slice(0, 10)}` : "";
+          alert(`⚠️ Этот файл уже загружен!\n\nДокумент: «${uploadRes.existing_name}»${dateStr}\n\nДубликат не сохранён.`);
+          return;
+        }
+        s3Url = uploadRes.url;
+      }
+
+      // 2. Только после успешной загрузки создаём запись в БД
+      setUploadProgress("Распознаю документ...");
       const res = await api.documents.create({
         name: docName,
         size_label: `${sizeMb} МБ`,
         status: "processing",
+        ...(s3Url ? { s3_url: s3Url } : {}),
       });
 
       const combinedPreview = compressedPages[0].previewUrl;
@@ -341,25 +362,20 @@ export default function Documents() {
         status: "processing",
         recognizing: true,
         previewUrl: combinedPreview,
+        s3_url: s3Url,
       };
       setDocs((prev) => [newDoc, ...prev]);
       setSelected(newDoc);
       setMobileView("detail");
-
-      if (compressedPages[0]?.b64) {
-        api.uploadDoc({
-          file_b64: compressedPages[0].b64,
-          file_name: `scan_${res.document.id}.jpg`,
-          mime_type: "image/jpeg",
-          doc_id: res.document.id,
-        }).catch(() => {});
-      }
 
       const images = compressedPages.map((p) => ({ b64: p.b64, mime: p.mime }));
       await recognizeMultiPage(res.document.id, images, combinedPreview, docName);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Ошибка обработки";
       alert(`Не удалось обработать страницы: ${msg}`);
+    } finally {
+      setUploading(false);
+      setUploadProgress("");
     }
   };
 
@@ -399,26 +415,62 @@ export default function Documents() {
   };
 
   const processSingleFile = async (f: File) => {
-    let previewUrl: string | undefined;
-    if (isImage(f.name)) {
-      try {
-        const compressed = await compressImageToBase64(f, 2400, 0.92, true);
-        previewUrl = compressed.previewUrl;
-      } catch {
-        previewUrl = URL.createObjectURL(f);
+    setUploading(true);
+    setUploadProgress("Загружаю файл в хранилище...");
+    try {
+      let previewUrl: string | undefined;
+      let compressed: { b64: string; mime: string; previewUrl: string } | null = null;
+
+      if (isImage(f.name)) {
+        try {
+          compressed = await compressImageToBase64(f, 2400, 0.92, true);
+          previewUrl = compressed.previewUrl;
+        } catch {
+          previewUrl = URL.createObjectURL(f);
+        }
       }
+
+      // 1. Сначала загружаем файл в S3
+      let s3Url: string | undefined;
+      let isDuplicate = false;
+      if (compressed) {
+        const uploadRes = await api.uploadDoc({
+          file_b64: compressed.b64,
+          file_name: `scan_${Date.now()}.jpg`,
+          mime_type: "image/jpeg",
+        });
+        if (uploadRes.duplicate) {
+          const dateStr = uploadRes.existing_date ? ` от ${uploadRes.existing_date.slice(0, 10)}` : "";
+          alert(`⚠️ Этот файл уже загружен!\n\nДокумент: «${uploadRes.existing_name}»${dateStr}\n\nДубликат не сохранён.`);
+          isDuplicate = true;
+        } else {
+          s3Url = uploadRes.url;
+        }
+      }
+
+      if (isDuplicate) return;
+
+      // 2. Только после успешной загрузки создаём запись в БД
+      setUploadProgress("Распознаю документ...");
+      const res = await api.documents.create({
+        name: f.name,
+        size_label: `${(f.size / 1024 / 1024).toFixed(1)} МБ`,
+        status: "processing",
+        ...(s3Url ? { s3_url: s3Url } : {}),
+      });
+
+      if (previewUrl) savePreview(res.document.id, previewUrl);
+      const newDoc: DocWithRecognition = { ...res.document, status: "processing", recognizing: true, previewUrl, s3_url: s3Url };
+      setDocs((prev) => [newDoc, ...prev]);
+      setSelected(newDoc);
+      setMobileView("detail");
+
+      // 3. Распознаём — S3 уже загружен, не нужно грузить повторно
+      recognizeFile(res.document.id, f, previewUrl, s3Url);
+    } finally {
+      setUploading(false);
+      setUploadProgress("");
     }
-    const res = await api.documents.create({
-      name: f.name,
-      size_label: `${(f.size / 1024 / 1024).toFixed(1)} МБ`,
-      status: "processing",
-    });
-    if (previewUrl) savePreview(res.document.id, previewUrl);
-    const newDoc: DocWithRecognition = { ...res.document, status: "processing", recognizing: true, previewUrl };
-    setDocs((prev) => [newDoc, ...prev]);
-    setSelected(newDoc);
-    setMobileView("detail");
-    recognizeFile(res.document.id, f, previewUrl);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -648,20 +700,39 @@ export default function Documents() {
   const handleMultiDone = async () => {
     if (pages.length === 0) return;
     setMultiProcessing(true);
+    setUploadProgress("Загружаю файл в хранилище...");
     try {
-      // Создаём один документ для всего набора страниц
       const firstName = pages[0].file.name;
       const totalSize = pages.reduce((s, p) => s + p.file.size, 0);
       const sizeMb = (totalSize / 1024 / 1024).toFixed(1);
       const docName = pages.length > 1 ? `Накладная (${pages.length} стр.)` : firstName;
 
+      // 1. Сначала загружаем первую страницу в S3
+      let s3Url: string | undefined;
+      if (pages[0]?.b64) {
+        const uploadRes = await api.uploadDoc({
+          file_b64: pages[0].b64,
+          file_name: `scan_${Date.now()}.jpg`,
+          mime_type: "image/jpeg",
+        });
+        if (uploadRes.duplicate) {
+          const dateStr = uploadRes.existing_date ? ` от ${uploadRes.existing_date.slice(0, 10)}` : "";
+          alert(`⚠️ Этот файл уже загружен!\n\nДокумент: «${uploadRes.existing_name}»${dateStr}\n\nДубликат не сохранён.`);
+          return;
+        }
+        s3Url = uploadRes.url;
+      }
+
+      // 2. Только после успешной загрузки создаём запись в БД
+      setUploadProgress("Распознаю документ...");
       const res = await api.documents.create({
         name: docName,
         size_label: `${sizeMb} МБ`,
         status: "processing",
+        ...(s3Url ? { s3_url: s3Url } : {}),
       });
 
-      const combinedPreview = pages[0].previewUrl; // первая страница как превью
+      const combinedPreview = pages[0].previewUrl;
       if (combinedPreview) savePreview(res.document.id, combinedPreview);
 
       const newDoc: DocWithRecognition = {
@@ -669,33 +740,20 @@ export default function Documents() {
         status: "processing",
         recognizing: true,
         previewUrl: combinedPreview,
+        s3_url: s3Url,
       };
       setDocs((prev) => [newDoc, ...prev]);
       setSelected(newDoc);
       setMobileView("detail");
       setShowMultiModal(false);
 
-      // Отправляем все страницы
       const images = pages.map((p) => ({ b64: p.b64, mime: p.mime }));
-      // Загружаем первую страницу в S3 для возможности поделиться
-      if (pages[0]?.b64) {
-        api.uploadDoc({
-          file_b64: pages[0].b64,
-          file_name: `scan_${res.document.id}.jpg`,
-          mime_type: "image/jpeg",
-          doc_id: res.document.id,
-        }).then((r) => {
-          if (r.duplicate) {
-            const dateStr = r.existing_date ? ` от ${r.existing_date.slice(0, 10)}` : "";
-            alert(`⚠️ Этот файл уже загружен!\n\nДокумент: «${r.existing_name}»${dateStr}\n\nДубликат не сохранён.`);
-          }
-        }).catch(() => { /* не блокируем */ });
-      }
       setPages([]);
 
       await recognizeMultiPage(res.document.id, images, combinedPreview, docName);
     } finally {
       setMultiProcessing(false);
+      setUploadProgress("");
     }
   };
 
@@ -745,6 +803,16 @@ export default function Documents() {
 
   return (
     <div className="animate-fade-in flex flex-col gap-4">
+      {/* Лоудер загрузки файла */}
+      {uploading && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-card border border-border rounded-2xl p-6 flex flex-col items-center gap-4 max-w-xs mx-4 shadow-xl">
+            <div className="w-12 h-12 rounded-full border-4 border-gold/30 border-t-gold animate-spin" />
+            <div className="text-sm font-medium text-center">{uploadProgress || "Загружаю файл..."}</div>
+            <div className="text-xs text-muted-foreground text-center">Не закрывайте страницу</div>
+          </div>
+        </div>
+      )}
       {/* Mobile buttons */}
       <div className="grid grid-cols-2 gap-3 lg:hidden">
         <button onClick={() => { setPages([]); setShowMultiModal(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}
@@ -1371,7 +1439,7 @@ export default function Documents() {
                 <button onClick={handleMultiDone} disabled={multiProcessing}
                   className="w-full py-4 bg-gold text-primary-foreground rounded-xl text-base font-semibold flex items-center justify-center gap-3 disabled:opacity-60 active:scale-95 transition-transform">
                   {multiProcessing
-                    ? <><div className="w-5 h-5 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" /> Отправляю ИИ...</>
+                    ? <><div className="w-5 h-5 rounded-full border-2 border-primary-foreground border-t-transparent animate-spin" /> {uploadProgress || "Обрабатываю..."}</>
                     : <><Icon name="CheckCircle" size={22} /> Готово — {pages.length} {pages.length === 1 ? "страница" : pages.length < 5 ? "страницы" : "страниц"}</>}
                 </button>
               </>

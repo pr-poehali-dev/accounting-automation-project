@@ -58,9 +58,9 @@ def handler(event: dict, context) -> dict:
             body = json.loads(event.get("body") or "{}")
             cur.execute(f"""
                 INSERT INTO {SCHEMA}.documents
-                    (name, size_label, file_key, status, rec_type, rec_amount, rec_date, rec_counterparty, rec_inn)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id, name, size_label, status, created_at
+                    (name, size_label, file_key, status, rec_type, rec_amount, rec_date, rec_counterparty, rec_inn, s3_url)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, name, size_label, status, s3_url, created_at
             """, (
                 body.get("name", "document"),
                 body.get("size_label"),
@@ -71,9 +71,10 @@ def handler(event: dict, context) -> dict:
                 body.get("rec_date"),
                 body.get("rec_counterparty"),
                 body.get("rec_inn"),
+                body.get("s3_url"),
             ))
             conn.commit()
-            cols = ["id","name","size_label","status","created_at"]
+            cols = ["id","name","size_label","status","s3_url","created_at"]
             row = dict(zip(cols, cur.fetchone()))
             return resp(201, {"document": row})
 
