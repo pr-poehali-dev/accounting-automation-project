@@ -31,6 +31,13 @@ const BANNERS = [
     sub: "Авторская программа Д. А. Буцкого — надёжно, быстро, без лишнего",
     emblem: "coa",
   },
+  {
+    img: "",
+    tag: "Финансовые технологии",
+    title: "Butsky Group",
+    sub: "Авторская программа бухгалтерского учёта Д. А. Буцкого",
+    emblem: "brand",
+  },
 ];
 
 function HeroBanner() {
@@ -61,16 +68,64 @@ function HeroBanner() {
   return (
     <div className="relative w-full overflow-hidden rounded-xl" style={{ height: "220px" }}>
       {/* Background image */}
-      <div
-        className="absolute inset-0 bg-cover bg-center transition-opacity duration-300"
-        style={{
-          backgroundImage: `url(${b.img})`,
-          opacity: animating ? 0 : 1,
-        }}
-      />
-      {/* Gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-r from-[#0F172A]/90 via-[#0F172A]/60 to-transparent" />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#0F172A]/70 via-transparent to-transparent" />
+      {b.img ? (
+        <div
+          className="absolute inset-0 bg-cover bg-center transition-opacity duration-300"
+          style={{ backgroundImage: `url(${b.img})`, opacity: animating ? 0 : 1 }}
+        />
+      ) : (
+        /* Брендовый фон — градиент без фото */
+        <div
+          className="absolute inset-0 transition-opacity duration-300"
+          style={{
+            background: "linear-gradient(135deg, #0F172A 0%, #0c1f3a 50%, #0F172A 100%)",
+            opacity: animating ? 0 : 1,
+          }}
+        >
+          {/* Декоративная сетка */}
+          <svg className="absolute inset-0 w-full h-full opacity-5" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#0284C7" strokeWidth="0.5"/>
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)" />
+          </svg>
+          {/* Центральный логотип BG */}
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center gap-4 transition-opacity duration-300"
+            style={{ opacity: animating ? 0 : 1 }}
+          >
+            <div className="flex items-center gap-4">
+              <svg width="64" height="64" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg"
+                style={{ filter: "drop-shadow(0 0 16px rgba(2,132,199,0.5))" }}>
+                <polygon points="18,2 33,10 33,26 18,34 3,26 3,10" fill="#0F172A" stroke="#0284C7" strokeWidth="1.5"/>
+                <text x="18" y="23" textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="700" fontSize="12" fill="#ffffff" letterSpacing="-0.5">BG</text>
+              </svg>
+              <div className="text-left">
+                <div className="text-3xl font-bold text-white tracking-tight leading-none">Butsky Group</div>
+                <div className="text-[#0284C7] text-sm font-medium tracking-widest mt-1">ФИНАНСОВЫЕ ТЕХНОЛОГИИ</div>
+              </div>
+            </div>
+            <div className="text-white/50 text-xs tracking-wider text-center max-w-xs">
+              Авторская программа бухгалтерского учёта Д. А. Буцкого
+            </div>
+            {/* Декоративная линия */}
+            <div className="flex items-center gap-3">
+              <div className="h-px w-16 bg-[#0284C7]/40" />
+              <div className="w-1.5 h-1.5 rounded-full bg-[#0284C7]" />
+              <div className="h-px w-16 bg-[#0284C7]/40" />
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Gradient overlay — только для баннеров с фото */}
+      {b.img && (
+        <>
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0F172A]/90 via-[#0F172A]/60 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0F172A]/70 via-transparent to-transparent" />
+        </>
+      )}
 
       {/* Флаг / Герб России — правый верхний угол */}
       <div
@@ -116,20 +171,22 @@ function HeroBanner() {
         )}
       </div>
 
-      {/* Content */}
-      <div
-        className="relative z-10 h-full flex flex-col justify-end p-5 sm:p-7 transition-opacity duration-300"
-        style={{ opacity: animating ? 0 : 1 }}
-      >
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-widest text-[#0284C7] uppercase mb-2">
-          <span className="w-1 h-1 rounded-full bg-[#0284C7]" />
-          {b.tag}
-        </span>
-        <h2 className="text-lg sm:text-2xl font-bold text-white leading-tight mb-1.5 whitespace-pre-line">
-          {b.title}
-        </h2>
-        <p className="text-sm text-white/70 max-w-sm">{b.sub}</p>
-      </div>
+      {/* Content — только для баннеров с фото */}
+      {b.img && (
+        <div
+          className="relative z-10 h-full flex flex-col justify-end p-5 sm:p-7 transition-opacity duration-300"
+          style={{ opacity: animating ? 0 : 1 }}
+        >
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-widest text-[#0284C7] uppercase mb-2">
+            <span className="w-1 h-1 rounded-full bg-[#0284C7]" />
+            {b.tag}
+          </span>
+          <h2 className="text-lg sm:text-2xl font-bold text-white leading-tight mb-1.5 whitespace-pre-line">
+            {b.title}
+          </h2>
+          <p className="text-sm text-white/70 max-w-sm">{b.sub}</p>
+        </div>
+      )}
 
       {/* Dots */}
       <div className="absolute bottom-4 right-5 flex gap-1.5 z-10">
