@@ -683,7 +683,7 @@ export default function AdminSettings() {
                 </li>
                 <li className="flex gap-2.5">
                   <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gold/20 text-gold flex items-center justify-center text-[10px] font-bold">5</span>
-                  <span>Вставьте ключи в поля ниже. Endpoint оставьте по умолчанию. Нажмите <span className="text-foreground font-medium">«Сохранить»</span>, затем <span className="text-foreground font-medium">«Проверить связь»</span></span>
+                  <span>Вставьте ключи в поля ниже. В поле <span className="text-foreground font-medium">Endpoint URL</span> должно быть: <span className="font-mono text-gold/90 select-all">https://storage.yandexcloud.net</span> — не меняйте. Нажмите <span className="text-foreground font-medium">«Сохранить»</span>, затем <span className="text-foreground font-medium">«Проверить связь»</span></span>
                 </li>
               </ol>
             </div>
@@ -697,10 +697,16 @@ export default function AdminSettings() {
               </div>
               <div>
                 <label className="text-xs text-muted-foreground block mb-1.5">Endpoint URL</label>
-                <input value={s3.endpoint_url} onChange={(e) => setS3((s) => ({ ...s, endpoint_url: e.target.value }))}
-                  placeholder="https://storage.yandexcloud.net"
-                  className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
-                <div className="text-[11px] text-muted-foreground/70 mt-1">Стандартный адрес Яндекса — не меняйте без необходимости</div>
+                <div className="flex gap-1.5">
+                  <input value={s3.endpoint_url} onChange={(e) => setS3((s) => ({ ...s, endpoint_url: e.target.value }))}
+                    placeholder="https://storage.yandexcloud.net"
+                    className="flex-1 bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
+                  <button type="button" onClick={() => setS3((s) => ({ ...s, endpoint_url: "https://storage.yandexcloud.net" }))}
+                    className="px-2.5 py-2 rounded border border-border text-xs text-muted-foreground hover:text-gold hover:border-gold/40 transition-colors whitespace-nowrap flex-shrink-0">
+                    Сбросить
+                  </button>
+                </div>
+                <div className="text-[11px] text-muted-foreground/70 mt-1">Должно быть: <span className="font-mono text-gold/80">https://storage.yandexcloud.net</span></div>
               </div>
             </div>
             <div>
