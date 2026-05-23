@@ -1,6 +1,121 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import { api, fmt, type DashboardSummary } from "@/lib/api";
+
+const BANNERS = [
+  {
+    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/b077870a-e999-40a2-9c49-7d0c32e63655.jpg",
+    tag: "Butsky Group",
+    title: "Команда профессионалов\nна страже вашего учёта",
+    sub: "Интеллектуальная автоматизация учёта, созданная экспертом",
+  },
+  {
+    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/37ef6031-73c3-4eb8-83c4-ba3eb901784c.jpg",
+    tag: "Бухучёт с телефона",
+    title: "Сфотографировал —\nдокумент уже в системе",
+    sub: "ИИ распознаёт накладные, чеки и счета за секунды",
+  },
+  {
+    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/1bbe8d14-d6fd-4586-aba6-77d734c972d0.jpg",
+    tag: "Автоматический расчёт",
+    title: "Налоги и отчёты\nсчитаются сами",
+    sub: "Полная налоговая отчётность формируется в один клик",
+  },
+  {
+    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/e2d810e1-f23a-4d9b-b249-6c0c15262927.jpg",
+    tag: "BG · Butsky Group",
+    title: "Максимальная простота\nфинансового учёта",
+    sub: "Авторская программа Д. А. Буцкого — надёжно, быстро, без лишнего",
+  },
+];
+
+function HeroBanner() {
+  const [current, setCurrent] = useState(0);
+  const [animating, setAnimating] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const goTo = (idx: number) => {
+    if (animating || idx === current) return;
+    setAnimating(true);
+    setTimeout(() => {
+      setCurrent(idx);
+      setAnimating(false);
+    }, 300);
+  };
+
+  const next = useCallback(() => {
+    goTo((current + 1) % BANNERS.length);
+  }, [current, animating]);
+
+  useEffect(() => {
+    timerRef.current = setInterval(next, 5000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [next]);
+
+  const b = BANNERS[current];
+
+  return (
+    <div className="relative w-full overflow-hidden rounded-xl" style={{ height: "220px" }}>
+      {/* Background image */}
+      <div
+        className="absolute inset-0 bg-cover bg-center transition-opacity duration-300"
+        style={{
+          backgroundImage: `url(${b.img})`,
+          opacity: animating ? 0 : 1,
+        }}
+      />
+      {/* Gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-r from-[#0F172A]/90 via-[#0F172A]/60 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#0F172A]/70 via-transparent to-transparent" />
+
+      {/* Content */}
+      <div
+        className="relative z-10 h-full flex flex-col justify-end p-5 sm:p-7 transition-opacity duration-300"
+        style={{ opacity: animating ? 0 : 1 }}
+      >
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-widest text-[#0284C7] uppercase mb-2">
+          <span className="w-1 h-1 rounded-full bg-[#0284C7]" />
+          {b.tag}
+        </span>
+        <h2 className="text-lg sm:text-2xl font-bold text-white leading-tight mb-1.5 whitespace-pre-line">
+          {b.title}
+        </h2>
+        <p className="text-sm text-white/70 max-w-sm">{b.sub}</p>
+      </div>
+
+      {/* Dots */}
+      <div className="absolute bottom-4 right-5 flex gap-1.5 z-10">
+        {BANNERS.map((_, i) => (
+          <button
+            key={i}
+            onClick={() => goTo(i)}
+            className="transition-all duration-300"
+            style={{
+              width: i === current ? "20px" : "6px",
+              height: "6px",
+              borderRadius: "3px",
+              background: i === current ? "#0284C7" : "rgba(255,255,255,0.35)",
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Prev / Next arrows */}
+      <button
+        onClick={() => goTo((current - 1 + BANNERS.length) % BANNERS.length)}
+        className="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-black/30 hover:bg-black/50 flex items-center justify-center text-white transition-all duration-300"
+      >
+        <Icon name="ChevronLeft" size={14} />
+      </button>
+      <button
+        onClick={() => goTo((current + 1) % BANNERS.length)}
+        className="absolute right-14 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-black/30 hover:bg-black/50 flex items-center justify-center text-white transition-all duration-300"
+      >
+        <Icon name="ChevronRight" size={14} />
+      </button>
+    </div>
+  );
+}
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_KEY = "dashboard_quarters_year";
@@ -103,6 +218,7 @@ export default function Dashboard({ onNavigate }: Props) {
 
   return (
     <div className="animate-fade-in space-y-4 sm:space-y-5">
+      <HeroBanner />
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         {widgets.map((w, i) => (
           <div key={i} className="card-fin p-3 sm:p-5 flex flex-col gap-2 sm:gap-3">
