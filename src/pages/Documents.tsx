@@ -905,12 +905,25 @@ export default function Documents() {
 
               {/* Document preview */}
               {(selected.previewUrl || selected.s3_url) ? (
-                <div className="mb-3 rounded-lg overflow-hidden border border-border bg-secondary/30">
-                  <img
-                    src={selected.previewUrl || selected.s3_url}
-                    alt="Документ"
-                    className="w-full max-h-52 object-contain"
-                  />
+                <div className="mb-3">
+                  <div className="rounded-lg overflow-hidden border border-border bg-secondary/30">
+                    <img
+                      src={selected.previewUrl || selected.s3_url}
+                      alt="Документ"
+                      className="w-full max-h-52 object-contain"
+                    />
+                  </div>
+                  <div className="mt-1 px-0.5">
+                    {selected.s3_url?.includes("yandexcloud.net") ? (
+                      <span className="text-[11px] text-muted-foreground">🟡 Яндекс</span>
+                    ) : selected.s3_url?.includes("cdn.poehali.dev") || selected.s3_url?.includes("bucket.poehali.dev") ? (
+                      <span className="text-[11px] text-muted-foreground">🟢 CDN</span>
+                    ) : selected.s3_url ? (
+                      <span className="text-[11px] text-muted-foreground">🟢 CDN</span>
+                    ) : (
+                      <span className="text-[11px] text-muted-foreground">🔴 фото не загружено в хранилище</span>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="mb-3">
@@ -921,6 +934,9 @@ export default function Documents() {
                   </button>
                   <input ref={reuploadRef} type="file" accept="image/*" className="hidden"
                     onChange={(e) => { if (e.target.files?.[0]) { handleReupload(e.target.files[0]); e.target.value = ""; } }} />
+                  <div className="mt-1 px-0.5">
+                    <span className="text-[11px] text-muted-foreground">🔴 фото не загружено в хранилище</span>
+                  </div>
                 </div>
               )}
 
