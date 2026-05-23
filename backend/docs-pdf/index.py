@@ -1,13 +1,14 @@
 """
 Генерация PDF со списком документов и их фотографиями.
-GET / — генерирует PDF и возвращает base64-строку для скачивания.
-GET /?ids=1,2,3 — только указанные документы.
+Сохраняет PDF в CDN поехали.dev и возвращает URL.
+GET / — все документы (до 40)
+GET /?ids=1,2,3 — только указанные документы
 """
 import json
 import os
 import io
 import gc
-import base64
+import boto3
 import requests
 import psycopg2
 from datetime import datetime
@@ -20,9 +21,8 @@ CORS = {
     "Content-Type": "application/json",
 }
 
-# Максимальный размер стороны картинки в PDF (пикселей)
-MAX_IMG_PX = 1200
-JPEG_QUALITY = 65
+MAX_IMG_PX = 900
+JPEG_QUALITY = 60
 
 
 def get_conn():
@@ -33,33 +33,44 @@ def resp(status, body):
     return {"statusCode": status, "headers": CORS, "body": json.dumps(body, ensure_ascii=False, default=str)}
 
 
-def download_and_compress(url: str):
-    """Скачивает изображение и сжимает до MAX_IMG_PX, возвращает bytes JPEG или None."""
+def compress_image(url: str):
+    """Скачивает и сжимает до MAX_IMG_PX px, возвращает (bytes, w, h) или None."""
     from PIL import Image as PILImage
     try:
-        r = requests.get(url, timeout=15)
+        r = requests.get(url, timeout=12)
         if r.status_code != 200:
             return None
         raw = r.content
-        r = None  # освобождаем память от ответа
-        pil_img = PILImage.open(io.BytesIO(raw))
+        r = None
+        img = PILImage.open(io.BytesIO(raw))
         raw = None
-        gc.collect()
-        pil_img = pil_img.convert("RGB")
-        # Ресайз если больше MAX_IMG_PX
-        w, h = pil_img.size
+        img = img.convert("RGB")
+        w, h = img.size
         if max(w, h) > MAX_IMG_PX:
             scale = MAX_IMG_PX / max(w, h)
-            pil_img = pil_img.resize((int(w * scale), int(h * scale)), PILImage.LANCZOS)
+            img = img.resize((int(w * scale), int(h * scale)), PILImage.LANCZOS)
+            w, h = img.size
         out = io.BytesIO()
-        pil_img.save(out, format="JPEG", quality=JPEG_QUALITY, optimize=True)
-        pil_img.close()
-        pil_img = None
+        img.save(out, format="JPEG", quality=JPEG_QUALITY, optimize=True)
+        img.close()
         gc.collect()
-        return out.getvalue()
+        return out.getvalue(), w, h
     except Exception as e:
-        print(f"[docs-pdf] img error {url}: {e}")
+        print(f"[docs-pdf] img err {url}: {e}")
         return None
+
+
+def save_to_cdn(pdf_bytes: bytes, filename: str) -> str:
+    proj_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+    s3 = boto3.client(
+        "s3",
+        endpoint_url="https://bucket.poehali.dev",
+        aws_access_key_id=proj_key,
+        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+    )
+    key = f"reports/{filename}"
+    s3.put_object(Bucket="files", Key=key, Body=pdf_bytes, ContentType="application/pdf")
+    return f"https://cdn.poehali.dev/projects/{proj_key}/bucket/{key}"
 
 
 def generate_pdf(docs: list) -> bytes:
@@ -70,68 +81,54 @@ def generate_pdf(docs: list) -> bytes:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, HRFlowable
 
     buf = io.BytesIO()
-    pdf_doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=2*cm,
-        rightMargin=2*cm,
-        topMargin=2*cm,
-        bottomMargin=2*cm,
-    )
+    pdf_doc = SimpleDocTemplate(buf, pagesize=A4,
+        leftMargin=2*cm, rightMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
 
-    W, H = A4
-    content_width = W - 4*cm
+    W, _ = A4
+    cw = W - 4*cm
 
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle("title", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold", spaceAfter=6)
-    subtitle_style = ParagraphStyle("subtitle", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.grey, spaceAfter=16)
-    doc_name_style = ParagraphStyle("docname", parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold", spaceAfter=2)
-    doc_meta_style = ParagraphStyle("docmeta", parent=styles["Normal"], fontSize=8, fontName="Helvetica", textColor=colors.HexColor("#666666"), spaceAfter=6)
+    s_title = ParagraphStyle("t", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold", spaceAfter=6)
+    s_sub = ParagraphStyle("s", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.grey, spaceAfter=14)
+    s_name = ParagraphStyle("n", parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold", spaceAfter=2)
+    s_meta = ParagraphStyle("m", parent=styles["Normal"], fontSize=8, fontName="Helvetica", textColor=colors.HexColor("#666666"), spaceAfter=5)
 
     story = []
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
-    story.append(Paragraph("Список документов", title_style))
-    story.append(Paragraph(f"Сформирован: {now_str} • Документов: {len(docs)}", subtitle_style))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e5e7eb")))
-    story.append(Spacer(1, 0.4*cm))
+    story.append(Paragraph("Список документов", s_title))
+    story.append(Paragraph(f"Сформирован: {now_str}   Документов: {len(docs)}", s_sub))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#cccccc")))
+    story.append(Spacer(1, 0.3*cm))
 
     for i, doc in enumerate(docs):
-        name = doc.get("name") or "Без названия"
-        rec_type = doc.get("rec_type") or ""
-        rec_amount = doc.get("rec_amount") or ""
-        rec_date = doc.get("rec_date") or str(doc.get("created_at") or "")[:10]
-        rec_counterparty = doc.get("rec_counterparty") or ""
-        s3_url = doc.get("s3_url") or ""
+        name = (doc.get("name") or "Без названия").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+        meta_parts = [p for p in [
+            doc.get("rec_date") or str(doc.get("created_at") or "")[:10],
+            doc.get("rec_type") or "",
+            doc.get("rec_amount") or "",
+            doc.get("rec_counterparty") or "",
+        ] if p]
 
-        safe_name = name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        story.append(Paragraph(f"{i+1}. {safe_name}", doc_name_style))
-
-        meta_parts = [p for p in [rec_date, rec_type, rec_amount, rec_counterparty] if p]
+        story.append(Paragraph(f"{i+1}. {name}", s_name))
         if meta_parts:
-            safe_meta = " • ".join(meta_parts).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            story.append(Paragraph(safe_meta, doc_meta_style))
+            story.append(Paragraph((" • ".join(meta_parts)).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"), s_meta))
 
+        s3_url = doc.get("s3_url") or ""
         if s3_url:
-            img_bytes = download_and_compress(s3_url)
-            if img_bytes:
+            result = compress_image(s3_url)
+            if result:
+                img_bytes, img_w, img_h = result
                 try:
-                    from PIL import Image as PILImage
-                    tmp = PILImage.open(io.BytesIO(img_bytes))
-                    img_w_px, img_h_px = tmp.size
-                    tmp.close()
-                    max_w = float(content_width)
-                    max_h = float(10 * cm)
-                    scale = min(max_w / img_w_px, max_h / img_h_px, 1.0)
-                    rl_img = Image(io.BytesIO(img_bytes), width=img_w_px * scale, height=img_h_px * scale)
-                    story.append(rl_img)
+                    scale = min(float(cw) / img_w, float(8*cm) / img_h, 1.0)
+                    story.append(Image(io.BytesIO(img_bytes), width=img_w*scale, height=img_h*scale))
                 except Exception as e:
-                    print(f"[docs-pdf] rl image error doc {doc.get('id')}: {e}")
+                    print(f"[docs-pdf] rl err doc {doc.get('id')}: {e}")
                 img_bytes = None
                 gc.collect()
 
-        story.append(Spacer(1, 0.3*cm))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#e5e7eb"), dash=(2, 4)))
-        story.append(Spacer(1, 0.3*cm))
+        story.append(Spacer(1, 0.25*cm))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#e0e0e0"), dash=(2, 4)))
+        story.append(Spacer(1, 0.25*cm))
 
     pdf_doc.build(story)
     result = buf.getvalue()
@@ -140,7 +137,7 @@ def generate_pdf(docs: list) -> bytes:
 
 
 def handler(event: dict, context) -> dict:
-    """Генерирует PDF со списком документов и их фотографиями (сжатыми)."""
+    """Генерирует PDF с фото документов, сохраняет в CDN и возвращает URL для скачивания."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
@@ -168,42 +165,26 @@ def handler(event: dict, context) -> dict:
                 FROM {SCHEMA}.documents
                 WHERE status = 'done' AND s3_url IS NOT NULL
                 ORDER BY created_at DESC
-                LIMIT 50
+                LIMIT 40
             """)
 
         cols = ["id", "name", "s3_url", "rec_type", "rec_amount", "rec_date", "rec_counterparty", "created_at"]
         docs = [dict(zip(cols, row)) for row in cur.fetchall()]
+    finally:
         cur.close()
         conn.close()
 
-        if not docs:
-            return resp(200, {"ok": False, "error": "Нет документов для генерации PDF"})
+    if not docs:
+        return resp(200, {"ok": False, "error": "Нет документов для генерации PDF"})
 
-        print(f"[docs-pdf] Generating PDF for {len(docs)} docs")
-        pdf_bytes = generate_pdf(docs)
-        pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-        pdf_bytes = None
-        gc.collect()
+    print(f"[docs-pdf] Building PDF for {len(docs)} docs")
+    pdf_bytes = generate_pdf(docs)
 
-        now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"documents_{now_str}.pdf"
+    now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"Dokumenty_{now_str}.pdf"
+    url = save_to_cdn(pdf_bytes, filename)
+    pdf_bytes = None
+    gc.collect()
 
-        return resp(200, {
-            "ok": True,
-            "filename": filename,
-            "pdf_b64": pdf_b64,
-            "count": len(docs),
-        })
-
-    except Exception as e:
-        import traceback
-        print("DOCS-PDF ERROR:", traceback.format_exc())
-        return resp(500, {"ok": False, "error": str(e)})
-    finally:
-        try:
-            if not cur.closed:
-                cur.close()
-            if not conn.closed:
-                conn.close()
-        except Exception:
-            pass
+    print(f"[docs-pdf] Saved {filename}, url={url}")
+    return resp(200, {"ok": True, "url": url, "filename": filename, "count": len(docs)})

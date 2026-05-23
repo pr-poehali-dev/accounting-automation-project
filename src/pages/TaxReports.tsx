@@ -120,12 +120,11 @@ export default function TaxReports() {
     try {
       if (mode === "docs") {
         const res = await api.docsPdf();
-        if (!res.ok || !res.pdf_b64) {
+        if (!res.ok || !res.url) {
           alert(res.error || "Нет документов для генерации PDF");
           return;
         }
-        const blob = new Blob([Uint8Array.from(atob(res.pdf_b64), (c) => c.charCodeAt(0))], { type: "application/pdf" });
-        downloadFromUrl(URL.createObjectURL(blob), res.filename || "documents.pdf");
+        downloadFromUrl(res.url, res.filename || "documents.pdf");
       } else {
         const res = await api.generatePdf({ date_from: dateFrom, date_to: dateTo, taxable_only: true, vat_rate: vatRate, mode });
         downloadFromUrl(res.url, res.filename);

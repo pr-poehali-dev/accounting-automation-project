@@ -195,9 +195,9 @@ export const api = {
   },
 
   // ─── Docs PDF (фото документов) ─────────────────────────
-  docsPdf: async (ids?: number[]): Promise<{ ok: boolean; filename?: string; pdf_b64?: string; count?: number; error?: string }> => {
+  docsPdf: async (ids?: number[]): Promise<{ ok: boolean; url?: string; filename?: string; count?: number; error?: string }> => {
     const qs = ids && ids.length ? `?ids=${ids.join(",")}` : "";
-    return request<{ ok: boolean; filename?: string; pdf_b64?: string; count?: number; error?: string }>(`${URLS.docsPdf}${qs}`);
+    return request<{ ok: boolean; url?: string; filename?: string; count?: number; error?: string }>(`${URLS.docsPdf}${qs}`);
   },
 
   // ─── Migrate docs to Yandex S3 ──────────────────────────
