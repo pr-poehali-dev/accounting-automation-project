@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { api, fmt, type DocRecord, type RecognizeResult } from "@/lib/api";
+import { api, proxyImg, fmt, type DocRecord, type RecognizeResult } from "@/lib/api";
 
 const DEFAULT_CATEGORIES = ["Закупка товара", "Услуги", "Аренда", "Зарплаты", "Оборудование", "Маркетинг", "Логистика", "Прочее"];
 const CUSTOM_CATEGORIES_KEY = "custom_categories_v1";
@@ -812,9 +812,8 @@ export default function Documents() {
                   <div className="w-9 h-9 rounded overflow-hidden flex items-center justify-center bg-secondary flex-shrink-0">
                     {(doc.previewUrl || doc.s3_url) ? (
                       <img
-                        src={doc.previewUrl || doc.s3_url!}
+                        src={doc.previewUrl || proxyImg(doc.s3_url)}
                         alt=""
-                        referrerPolicy="no-referrer"
                         className="w-full h-full object-cover"
                         onError={(e) => {
                           const img = e.currentTarget;
@@ -922,7 +921,7 @@ export default function Documents() {
                 <div className="mb-3">
                   <div className="rounded-lg overflow-hidden border border-border bg-secondary/30">
                     <img
-                      src={selected.previewUrl || selected.s3_url}
+                      src={selected.previewUrl || proxyImg(selected.s3_url)}
                       alt="Документ"
                       className="w-full max-h-52 object-contain"
                     />
@@ -1161,10 +1160,10 @@ export default function Documents() {
             </div>
 
             {/* Document preview in modal */}
-            {selected?.previewUrl && (
+            {(selected?.previewUrl || selected?.s3_url) && (
               <div className="rounded-lg overflow-hidden border border-border bg-secondary/30">
                 <div className="text-xs text-muted-foreground px-2 py-1 border-b border-border">Документ</div>
-                <img src={selected.previewUrl} alt="Документ" className="w-full max-h-40 object-contain" />
+                <img src={selected.previewUrl || proxyImg(selected.s3_url)} alt="Документ" className="w-full max-h-40 object-contain" />
               </div>
             )}
             <div className="space-y-3">

@@ -5,6 +5,12 @@
       "method": "OPTIONS",
       "path": "/",
       "expectedStatus": 200
+    },
+    {
+      "name": "GET no url",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 400
     }
   ]
 }

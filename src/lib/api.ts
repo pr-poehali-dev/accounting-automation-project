@@ -1,4 +1,5 @@
 const URLS = {
+  imgProxy: "https://functions.poehali.dev/175171fe-6d38-4594-af4a-511eff3025ef",
   transactions: "https://functions.poehali.dev/3105b014-e11e-42e7-b435-176f087cf6e1",
   documents: "https://functions.poehali.dev/ab114954-abef-4fbd-aa0f-6200ccdf9984",
   taxReports: "https://functions.poehali.dev/d6031486-b133-49f5-ab9c-8dae0492a797",
@@ -12,6 +13,15 @@ const URLS = {
   docsPdf: "https://functions.poehali.dev/cd1cab49-82a0-450c-9939-2afd35536b4b",
   migrateDocsToS3: "https://functions.poehali.dev/8625f2ed-180d-4cb3-8be1-226e2e018479",
 };
+
+/** Оборачивает URL из Яндекс S3 в прокси для обхода CORS */
+export function proxyImg(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  if (url.includes("storage.yandexcloud.net")) {
+    return `${URLS.imgProxy}?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
