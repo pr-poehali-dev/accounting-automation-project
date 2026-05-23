@@ -157,6 +157,7 @@ export default function Documents() {
   const inputRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const multiCameraRef = useRef<HTMLInputElement>(null);
+  const reuploadRef = useRef<HTMLInputElement>(null);
 
   // Мультистраничный режим
   const [showMultiModal, setShowMultiModal] = useState(false);
@@ -359,6 +360,18 @@ export default function Documents() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Ошибка обработки";
       alert(`Не удалось обработать страницы: ${msg}`);
+    }
+  };
+
+  const handleReupload = async (file: File) => {
+    if (!selected) return;
+    if (!isImage(file.name)) { alert("Загрузите фото (JPG, PNG)"); return; }
+    const compressed = await compressImageToBase64(file, 2400, 0.92, true);
+    const r = await api.uploadDoc({ file_b64: compressed.b64, file_name: `scan_${selected.id}.jpg`, mime_type: "image/jpeg", doc_id: selected.id });
+    if (r.url) {
+      savePreviewSmall(selected.id, compressed.previewUrl);
+      setDocs((prev) => prev.map((d) => d.id === selected.id ? { ...d, s3_url: r.url, previewUrl: compressed.previewUrl } : d));
+      setSelected((prev) => prev ? { ...prev, s3_url: r.url, previewUrl: compressed.previewUrl } : prev);
     }
   };
 
@@ -891,13 +904,23 @@ export default function Documents() {
               )}
 
               {/* Document preview */}
-              {(selected.previewUrl || selected.s3_url) && (
+              {(selected.previewUrl || selected.s3_url) ? (
                 <div className="mb-3 rounded-lg overflow-hidden border border-border bg-secondary/30">
                   <img
                     src={selected.previewUrl || selected.s3_url}
                     alt="Документ"
                     className="w-full max-h-52 object-contain"
                   />
+                </div>
+              ) : (
+                <div className="mb-3">
+                  <button onClick={() => reuploadRef.current?.click()}
+                    className="w-full py-3 flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border hover:border-gold/50 hover:bg-gold/5 text-sm text-muted-foreground hover:text-foreground transition-colors active:scale-95">
+                    <Icon name="ImagePlus" size={16} className="text-gold" />
+                    Прикрепить фото документа
+                  </button>
+                  <input ref={reuploadRef} type="file" accept="image/*" className="hidden"
+                    onChange={(e) => { if (e.target.files?.[0]) { handleReupload(e.target.files[0]); e.target.value = ""; } }} />
                 </div>
               )}
 
