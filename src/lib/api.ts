@@ -295,6 +295,10 @@ export interface RecognizeResult {
   transaction_id?: number | null;
   date_found?: boolean;
   error?: string;
+  duplicate?: boolean;
+  warning?: string;
+  existing_name?: string;
+  existing_id?: number;
 }
 
 export const fmt = (n: number) =>

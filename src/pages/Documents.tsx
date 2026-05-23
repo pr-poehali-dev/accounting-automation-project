@@ -278,6 +278,15 @@ export default function Documents() {
         });
       }
 
+      // Проверка дубля по сумме + дате
+      if (result.duplicate) {
+        alert(`⚠️ Возможный дубль!\n\nДокумент с суммой ${result.amount?.toLocaleString("ru-RU")} ₽ и датой ${result.date} уже есть:\n«${result.existing_name}»\n\nЗагрузка отменена.`);
+        await api.documents.update(docId, { status: "error" }).catch(() => {});
+        setDocs((prev) => prev.map((d) => d.id === docId ? { ...d, status: "error", recognizing: false, recognitionError: "Дубль по сумме и дате" } : d));
+        setSelected((prev) => prev?.id === docId ? { ...prev, status: "error", recognizing: false, recognitionError: "Дубль по сумме и дате" } : prev);
+        return;
+      }
+
       // Обновляем документ в БД если ИИ не распознал (он мог уже обновить в бэке)
       if (!result.error) {
         await api.documents.update(docId, {

@@ -847,6 +847,35 @@ def handler(event: dict, context) -> dict:
         tx_type = fields.get("type", "expense")
 
         cur = conn.cursor()
+
+        # ── Защита от дублей по сумме + дате ─────────────────────────────
+        if amount and date_found and tx_date:
+            cur.execute(f"""
+                SELECT d.id, d.name, d.rec_date FROM {SCHEMA}.documents d
+                WHERE d.rec_date = %s
+                  AND d.rec_amount = %s
+                  AND d.status = 'done'
+                  AND (%s IS NULL OR d.id != %s)
+                LIMIT 1
+            """, (tx_date, f"₽ {amount:,.0f}".replace(",", " "), doc_id, doc_id))
+            dup = cur.fetchone()
+            if dup:
+                # Помечаем текущий документ как дубль
+                if doc_id:
+                    cur.execute(f"UPDATE {SCHEMA}.documents SET status='error' WHERE id=%s", (doc_id,))
+                    conn.commit()
+                cur.close()
+                return {"statusCode": 200, "headers": CORS,
+                        "body": json.dumps({
+                            "duplicate": True,
+                            "existing_id": dup[0],
+                            "existing_name": dup[1],
+                            "existing_date": str(dup[2]),
+                            "amount": amount,
+                            "date": tx_date,
+                            "warning": f"Документ с такой же суммой {amount:,.0f} ₽ и датой {tx_date} уже существует: «{dup[1]}»"
+                        }, ensure_ascii=False)}
+
         if doc_id:
             amt_str = f"₽ {amount:,.0f}".replace(",", " ") if amount else None
             cur.execute(f"""UPDATE {SCHEMA}.documents
