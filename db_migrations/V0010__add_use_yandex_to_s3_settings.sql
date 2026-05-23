@@ -1,0 +1,1 @@
+ALTER TABLE t_p79040548_accounting_automatio.s3_settings ADD COLUMN IF NOT EXISTS use_yandex boolean NOT NULL DEFAULT false;

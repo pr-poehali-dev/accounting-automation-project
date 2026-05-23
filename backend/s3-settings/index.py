@@ -39,11 +39,11 @@ def mask(s):
 
 
 def get_settings(cur):
-    cur.execute(f"SELECT bucket_name, endpoint_url, access_key, secret_key FROM {SCHEMA}.s3_settings WHERE id=1")
+    cur.execute(f"SELECT bucket_name, endpoint_url, access_key, secret_key, use_yandex FROM {SCHEMA}.s3_settings WHERE id=1")
     row = cur.fetchone()
     if not row:
         return None
-    return {"bucket_name": row[0], "endpoint_url": row[1], "access_key": row[2], "secret_key": row[3]}
+    return {"bucket_name": row[0], "endpoint_url": row[1], "access_key": row[2], "secret_key": row[3], "use_yandex": bool(row[4])}
 
 
 def handler(event: dict, context) -> dict:
@@ -95,11 +95,9 @@ def handler(event: dict, context) -> dict:
             s = get_settings(cur)
             if not s:
                 return resp(200, {"settings": {
-                    "bucket_name": "",
-                    "endpoint_url": YANDEX_ENDPOINT,
-                    "access_key": "",
-                    "secret_key_masked": "",
-                    "configured": False,
+                    "bucket_name": "", "endpoint_url": YANDEX_ENDPOINT,
+                    "access_key": "", "secret_key_masked": "",
+                    "configured": False, "use_yandex": False,
                 }})
             return resp(200, {"settings": {
                 "bucket_name": s["bucket_name"],
@@ -107,6 +105,7 @@ def handler(event: dict, context) -> dict:
                 "access_key": s["access_key"],
                 "secret_key_masked": mask(s["secret_key"]),
                 "configured": bool(s["access_key"] and s["bucket_name"]),
+                "use_yandex": s["use_yandex"],
             }})
 
         # PUT / — сохранить настройки
@@ -117,24 +116,24 @@ def handler(event: dict, context) -> dict:
             endpoint = body.get("endpoint_url", s["endpoint_url"] if s else YANDEX_ENDPOINT) or YANDEX_ENDPOINT
             access = body.get("access_key", s["access_key"] if s else "")
             secret = body.get("secret_key") or (s["secret_key"] if s else "")
+            use_yandex = body.get("use_yandex", s["use_yandex"] if s else False)
 
             if s:
                 cur.execute(f"""
                     UPDATE {SCHEMA}.s3_settings
-                    SET bucket_name=%s, endpoint_url=%s, access_key=%s, secret_key=%s, updated_at=NOW()
+                    SET bucket_name=%s, endpoint_url=%s, access_key=%s, secret_key=%s, use_yandex=%s, updated_at=NOW()
                     WHERE id=1
-                """, (bucket, endpoint, access, secret))
+                """, (bucket, endpoint, access, secret, use_yandex))
             else:
                 cur.execute(f"""
-                    INSERT INTO {SCHEMA}.s3_settings (id, bucket_name, endpoint_url, access_key, secret_key)
-                    VALUES (1, %s, %s, %s, %s)
-                """, (bucket, endpoint, access, secret))
+                    INSERT INTO {SCHEMA}.s3_settings (id, bucket_name, endpoint_url, access_key, secret_key, use_yandex)
+                    VALUES (1, %s, %s, %s, %s, %s)
+                """, (bucket, endpoint, access, secret, use_yandex))
             conn.commit()
             return resp(200, {"ok": True, "settings": {
-                "bucket_name": bucket,
-                "endpoint_url": endpoint,
-                "access_key": access,
-                "secret_key_masked": mask(secret),
+                "bucket_name": bucket, "endpoint_url": endpoint,
+                "access_key": access, "secret_key_masked": mask(secret),
+                "use_yandex": use_yandex,
             }})
 
         return resp(405, {"error": "Method not allowed"})

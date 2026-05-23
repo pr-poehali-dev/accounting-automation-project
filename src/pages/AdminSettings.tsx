@@ -76,7 +76,7 @@ export default function AdminSettings() {
   } | null>(null);
 
   // S3
-  const [s3, setS3] = useState<S3Settings>({ bucket_name: "", endpoint_url: "https://s3.regru.cloud", access_key: "", secret_key_masked: "" });
+  const [s3, setS3] = useState<S3Settings>({ bucket_name: "", endpoint_url: "https://storage.yandexcloud.net", access_key: "", secret_key_masked: "", use_yandex: false });
   const [s3SecretInput, setS3SecretInput] = useState("");
   const [showS3Secret, setShowS3Secret] = useState(false);
   const [s3Saving, setS3Saving] = useState(false);
@@ -102,6 +102,7 @@ export default function AdminSettings() {
         bucket_name: s3.bucket_name,
         endpoint_url: s3.endpoint_url,
         access_key: s3.access_key,
+        use_yandex: s3.use_yandex,
       };
       if (s3SecretInput.trim()) payload.secret_key = s3SecretInput.trim();
       const res = await api.s3Settings.update(payload);
@@ -643,85 +644,99 @@ export default function AdminSettings() {
         <div className="text-xs uppercase tracking-widest text-muted-foreground mb-1 gold-line pl-3">Яндекс Object Storage (S3)</div>
         <div className="text-xs text-muted-foreground mb-4 pl-3">Хранилище для фото документов и PDF-отчётов</div>
 
-        {/* Инструкция */}
-        <div className="mb-4 rounded-lg border border-border bg-secondary/40 p-4 space-y-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-gold">
-            <Icon name="BookOpen" size={15} />
-            Как подключить Яндекс Object Storage
+        {/* Переключатель */}
+        <div className="mb-4 flex items-center justify-between p-3 rounded-lg border border-border bg-secondary/30">
+          <div>
+            <div className="text-sm font-medium">{s3.use_yandex ? "Яндекс Object Storage активен" : "Поехали CDN активен"}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{s3.use_yandex ? "Файлы сохраняются в ваш Яндекс бакет" : "Файлы сохраняются во встроенное хранилище поехали.dev"}</div>
           </div>
-          <ol className="space-y-2.5 text-xs text-muted-foreground list-none">
-            <li className="flex gap-2.5">
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gold/20 text-gold flex items-center justify-center text-[10px] font-bold">1</span>
-              <span>Войдите в <span className="text-foreground font-medium">console.yandex.cloud</span> → выберите каталог → раздел <span className="text-foreground font-medium">Object Storage</span></span>
-            </li>
-            <li className="flex gap-2.5">
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gold/20 text-gold flex items-center justify-center text-[10px] font-bold">2</span>
-              <span>Нажмите <span className="text-foreground font-medium">«Создать бакет»</span> → задайте имя (латиницей, например <span className="font-mono text-gold/80">moy-buhuchet</span>) → доступ <span className="text-foreground font-medium">«Публичный»</span> → Создать</span>
-            </li>
-            <li className="flex gap-2.5">
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gold/20 text-gold flex items-center justify-center text-[10px] font-bold">3</span>
-              <span>Перейдите в <span className="text-foreground font-medium">Сервисные аккаунты</span> → создайте аккаунт с ролью <span className="text-foreground font-medium">storage.editor</span></span>
-            </li>
-            <li className="flex gap-2.5">
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gold/20 text-gold flex items-center justify-center text-[10px] font-bold">4</span>
-              <span>На странице сервисного аккаунта нажмите <span className="text-foreground font-medium">«Создать новый ключ»</span> → <span className="text-foreground font-medium">«Статический ключ доступа»</span> → скопируйте <span className="text-gold/80 font-mono">Access Key ID</span> и <span className="text-gold/80 font-mono">Secret Access Key</span> — они показываются один раз!</span>
-            </li>
-            <li className="flex gap-2.5">
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gold/20 text-gold flex items-center justify-center text-[10px] font-bold">5</span>
-              <span>Вставьте ключи в поля ниже. Endpoint оставьте по умолчанию. Нажмите <span className="text-foreground font-medium">«Сохранить»</span>, затем <span className="text-foreground font-medium">«Проверить связь»</span></span>
-            </li>
-          </ol>
+          <button onClick={() => setS3((s) => ({ ...s, use_yandex: !s.use_yandex }))}
+            className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${s3.use_yandex ? "bg-gold" : "bg-border"}`}>
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${s3.use_yandex ? "translate-x-5" : "translate-x-0"}`} />
+          </button>
         </div>
 
-        <div className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Инструкция и поля — только если Яндекс включён */}
+        {s3.use_yandex && (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-border bg-secondary/40 p-4 space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-gold">
+                <Icon name="BookOpen" size={15} />
+                Как подключить Яндекс Object Storage
+              </div>
+              <ol className="space-y-2.5 text-xs text-muted-foreground list-none">
+                <li className="flex gap-2.5">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gold/20 text-gold flex items-center justify-center text-[10px] font-bold">1</span>
+                  <span>Войдите в <span className="text-foreground font-medium">console.yandex.cloud</span> → выберите каталог → раздел <span className="text-foreground font-medium">Object Storage</span></span>
+                </li>
+                <li className="flex gap-2.5">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gold/20 text-gold flex items-center justify-center text-[10px] font-bold">2</span>
+                  <span>Нажмите <span className="text-foreground font-medium">«Создать бакет»</span> → задайте имя (латиницей, например <span className="font-mono text-gold/80">moy-buhuchet</span>) → доступ <span className="text-foreground font-medium">«Публичный»</span> → Создать</span>
+                </li>
+                <li className="flex gap-2.5">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gold/20 text-gold flex items-center justify-center text-[10px] font-bold">3</span>
+                  <span>Перейдите в <span className="text-foreground font-medium">Сервисные аккаунты</span> → создайте аккаунт с ролью <span className="text-foreground font-medium">storage.editor</span></span>
+                </li>
+                <li className="flex gap-2.5">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gold/20 text-gold flex items-center justify-center text-[10px] font-bold">4</span>
+                  <span>На странице сервисного аккаунта нажмите <span className="text-foreground font-medium">«Создать новый ключ»</span> → <span className="text-foreground font-medium">«Статический ключ доступа»</span> → скопируйте <span className="text-gold/80 font-mono">Access Key ID</span> и <span className="text-gold/80 font-mono">Secret Access Key</span> — они показываются один раз!</span>
+                </li>
+                <li className="flex gap-2.5">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gold/20 text-gold flex items-center justify-center text-[10px] font-bold">5</span>
+                  <span>Вставьте ключи в поля ниже. Endpoint оставьте по умолчанию. Нажмите <span className="text-foreground font-medium">«Сохранить»</span>, затем <span className="text-foreground font-medium">«Проверить связь»</span></span>
+                </li>
+              </ol>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1.5">Имя бакета (Bucket Name)</label>
+                <input value={s3.bucket_name} onChange={(e) => setS3((s) => ({ ...s, bucket_name: e.target.value }))}
+                  placeholder="moy-buhuchet"
+                  className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1.5">Endpoint URL</label>
+                <input value={s3.endpoint_url} onChange={(e) => setS3((s) => ({ ...s, endpoint_url: e.target.value }))}
+                  placeholder="https://storage.yandexcloud.net"
+                  className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
+                <div className="text-[11px] text-muted-foreground/70 mt-1">Стандартный адрес Яндекса — не меняйте без необходимости</div>
+              </div>
+            </div>
             <div>
-              <label className="text-xs text-muted-foreground block mb-1.5">Имя бакета (Bucket Name)</label>
-              <input value={s3.bucket_name} onChange={(e) => setS3((s) => ({ ...s, bucket_name: e.target.value }))}
-                placeholder="moy-buhuchet"
+              <label className="text-xs text-muted-foreground block mb-1.5">Access Key ID</label>
+              <input value={s3.access_key} onChange={(e) => setS3((s) => ({ ...s, access_key: e.target.value }))}
+                placeholder="YCAJExxxxxxxxxxxxxxxxxxxxxxxx"
                 className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground block mb-1.5">Endpoint URL</label>
-              <input value={s3.endpoint_url} onChange={(e) => setS3((s) => ({ ...s, endpoint_url: e.target.value }))}
-                placeholder="https://storage.yandexcloud.net"
-                className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
-              <div className="text-[11px] text-muted-foreground/70 mt-1">Стандартный адрес Яндекса — не меняйте без необходимости</div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs text-muted-foreground">Secret Access Key</label>
+                {s3.secret_key_masked && !s3SecretInput && (
+                  <span className="flex items-center gap-1 text-xs text-positive"><Icon name="CheckCircle" size={11} /> Ключ сохранён</span>
+                )}
+              </div>
+              <div className="relative">
+                <input type={showS3Secret ? "text" : "password"} value={s3SecretInput}
+                  onChange={(e) => setS3SecretInput(e.target.value)}
+                  placeholder={s3.secret_key_masked || "YCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}
+                  className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-gold pr-10" />
+                <button type="button" onClick={() => setShowS3Secret((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                  <Icon name={showS3Secret ? "EyeOff" : "Eye"} size={15} />
+                </button>
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">Ключ хранится в защищённом хранилище сервера, не передаётся третьим лицам</div>
             </div>
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground block mb-1.5">Access Key ID</label>
-            <input value={s3.access_key} onChange={(e) => setS3((s) => ({ ...s, access_key: e.target.value }))}
-              placeholder="YCAJExxxxxxxxxxxxxxxxxxxxxxxx"
-              className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground focus:outline-none focus:ring-1 focus:ring-gold" />
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs text-muted-foreground">Secret Access Key</label>
-              {s3.secret_key_masked && !s3SecretInput && (
-                <span className="flex items-center gap-1 text-xs text-positive"><Icon name="CheckCircle" size={11} /> Ключ сохранён</span>
-              )}
-            </div>
-            <div className="relative">
-              <input type={showS3Secret ? "text" : "password"} value={s3SecretInput}
-                onChange={(e) => setS3SecretInput(e.target.value)}
-                placeholder={s3.secret_key_masked || "YCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}
-                className="w-full bg-secondary border border-border rounded px-3 py-2.5 text-sm font-mono-fin text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-gold pr-10" />
-              <button type="button" onClick={() => setShowS3Secret((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
-                <Icon name={showS3Secret ? "EyeOff" : "Eye"} size={15} />
-              </button>
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">Ключ хранится в защищённом хранилище сервера, не передаётся третьим лицам</div>
-          </div>
 
-          {s3TestResult && (
-            <div className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm animate-fade-in ${s3TestResult.ok ? "bg-green-900/20 border-green-900/30 text-positive" : "bg-red-900/20 border-red-900/30 text-negative"}`}>
-              <Icon name={s3TestResult.ok ? "CheckCircle" : "AlertCircle"} size={16} className="flex-shrink-0 mt-0.5" />
-              <div>{s3TestResult.ok ? (s3TestResult.message || "Подключение успешно!") : (s3TestResult.error || "Ошибка подключения")}</div>
-            </div>
-          )}
-        </div>
+            {s3TestResult && (
+              <div className={`flex items-start gap-2.5 p-3 rounded-lg border text-sm animate-fade-in ${s3TestResult.ok ? "bg-green-900/20 border-green-900/30 text-positive" : "bg-red-900/20 border-red-900/30 text-negative"}`}>
+                <Icon name={s3TestResult.ok ? "CheckCircle" : "AlertCircle"} size={16} className="flex-shrink-0 mt-0.5" />
+                <div>{s3TestResult.ok ? (s3TestResult.message || "Подключение успешно!") : (s3TestResult.error || "Ошибка подключения")}</div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* S3 action buttons */}

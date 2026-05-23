@@ -279,6 +279,7 @@ export interface S3Settings {
   access_key: string;
   secret_key_masked?: string;
   configured?: boolean;
+  use_yandex?: boolean;
 }
 
 export interface RecognizeResult {
