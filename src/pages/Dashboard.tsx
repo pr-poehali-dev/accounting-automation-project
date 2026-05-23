@@ -9,6 +9,7 @@ const BANNERS = [
     title: "Команда профессионалов\nна страже вашего учёта",
     sub: "Интеллектуальная автоматизация учёта, созданная экспертом",
     emblem: "flag",
+    imgPos: "center 30%",
   },
   {
     img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/40fb5983-5ead-4755-bd67-d8b3b24f4c48.jpg",
@@ -16,6 +17,7 @@ const BANNERS = [
     title: "Сфотографировал —\nдокумент уже в системе",
     sub: "ИИ распознаёт накладные, чеки и счета за секунды",
     emblem: "flag",
+    imgPos: "center 25%",
   },
   {
     img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/21d744fc-102d-4f89-9c13-1bba5d829503.jpg",
@@ -23,13 +25,15 @@ const BANNERS = [
     title: "Налоги и отчёты\nсчитаются сами",
     sub: "Полная налоговая отчётность формируется в один клик",
     emblem: "coa",
+    imgPos: "center 20%",
   },
   {
-    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/57041079-6711-406c-bb01-ee7b320b9379.jpg",
-    tag: "BG · Butsky Group",
+    img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/4e07e443-2aee-4874-9dbe-9a6f3732e740.jpg",
+    tag: "Простота и надёжность",
     title: "Максимальная простота\nфинансового учёта",
     sub: "Авторская программа Д. А. Буцкого — надёжно, быстро, без лишнего",
     emblem: "coa",
+    imgPos: "center top",
   },
   {
     img: "",
@@ -70,8 +74,12 @@ function HeroBanner() {
       {/* Background image */}
       {b.img ? (
         <div
-          className="absolute inset-0 bg-cover bg-center transition-opacity duration-300"
-          style={{ backgroundImage: `url(${b.img})`, opacity: animating ? 0 : 1 }}
+          className="absolute inset-0 bg-cover transition-opacity duration-300"
+          style={{
+            backgroundImage: `url(${b.img})`,
+            backgroundPosition: (b as { imgPos?: string }).imgPos || "center center",
+            opacity: animating ? 0 : 1,
+          }}
         />
       ) : (
         /* Брендовый фон — градиент без фото */
