@@ -140,34 +140,16 @@ function HeroBanner() {
           </div>
         )}
         {b.emblem === "coa" && (
-          <svg width="32" height="36" viewBox="0 0 100 112" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.5))" }}>
-            {/* Щит */}
-            <path d="M50 108 C50 108 8 85 8 48 L8 14 L50 4 L92 14 L92 48 C92 85 50 108 50 108Z" fill="#D52B1E" stroke="#C8A000" strokeWidth="2.5"/>
-            {/* Двуглавый орёл — упрощённый */}
-            <ellipse cx="50" cy="54" rx="18" ry="22" fill="#C8A000"/>
-            {/* Левая голова */}
-            <ellipse cx="33" cy="36" rx="9" ry="10" fill="#C8A000"/>
-            <circle cx="29" cy="31" r="4" fill="#C8A000"/>
-            {/* Правая голова */}
-            <ellipse cx="67" cy="36" rx="9" ry="10" fill="#C8A000"/>
-            <circle cx="71" cy="31" r="4" fill="#C8A000"/>
-            {/* Короны */}
-            <path d="M24 25 L27 19 L30 25" fill="#C8A000" stroke="#C8A000" strokeWidth="1"/>
-            <path d="M66 25 L69 19 L72 25" fill="#C8A000" stroke="#C8A000" strokeWidth="1"/>
-            <path d="M44 22 L50 15 L56 22" fill="#C8A000" stroke="#C8A000" strokeWidth="1"/>
-            {/* Крылья */}
-            <path d="M32 48 Q15 42 12 55 Q20 58 32 54Z" fill="#C8A000"/>
-            <path d="M68 48 Q85 42 88 55 Q80 58 68 54Z" fill="#C8A000"/>
-            {/* Скипетр и держава */}
-            <line x1="50" y1="42" x2="50" y2="72" stroke="#C8A000" strokeWidth="2.5"/>
-            <circle cx="50" cy="40" r="3" fill="#C8A000"/>
-            {/* Щиток на груди */}
-            <rect x="43" y="50" width="14" height="16" rx="2" fill="#D52B1E" stroke="#C8A000" strokeWidth="1.5"/>
-            <line x1="50" y1="52" x2="50" y2="64" stroke="#C8A000" strokeWidth="1.5"/>
-            {/* Лапы */}
-            <path d="M36 68 Q28 72 26 80" stroke="#C8A000" strokeWidth="2" fill="none"/>
-            <path d="M64 68 Q72 72 74 80" stroke="#C8A000" strokeWidth="2" fill="none"/>
-          </svg>
+          <div
+            className="rounded overflow-hidden shadow-lg"
+            style={{ width: 44, height: 44, background: "#000" }}
+          >
+            <img
+              src="https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/227b28b7-cfae-444a-8fbe-aad15fffab8e.jpg"
+              alt="Герб России"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          </div>
         )}
       </div>
 
