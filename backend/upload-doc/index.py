@@ -40,47 +40,24 @@ def get_s3_settings(cur):
 
 
 def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secret_key):
-    """Загружает файл через S3 multipart upload."""
-    print(f"[upload-doc] Starting multipart upload to {endpoint}/{bucket}/{key}, size={len(data)}")
+    """Загружает файл через обычный put_object с жёстким таймаутом 15 сек."""
+    print(f"[upload-doc] PUT to {endpoint}/{bucket}/{key}, size={len(data)}")
     s3 = boto3.client(
         "s3",
         endpoint_url=endpoint,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
         config=Config(
-            connect_timeout=10,
-            read_timeout=50,
-            retries={"max_attempts": 1},
+            connect_timeout=8,
+            read_timeout=15,
+            retries={"max_attempts": 0},
             s3={"addressing_style": "path"},
         ),
         region_name="us-east-1",
     )
-
-    # Инициируем multipart upload
-    mpu = s3.create_multipart_upload(Bucket=bucket, Key=key, ContentType=content_type)
-    upload_id = mpu["UploadId"]
-    print(f"[upload-doc] Multipart upload started, upload_id={upload_id}")
-
-    try:
-        # Загружаем единственную часть (весь файл)
-        part = s3.upload_part(
-            Bucket=bucket, Key=key,
-            UploadId=upload_id, PartNumber=1,
-            Body=data,
-        )
-        print(f"[upload-doc] Part 1 uploaded, ETag={part['ETag']}")
-
-        # Завершаем multipart upload
-        s3.complete_multipart_upload(
-            Bucket=bucket, Key=key, UploadId=upload_id,
-            MultipartUpload={"Parts": [{"PartNumber": 1, "ETag": part["ETag"]}]},
-        )
-    except Exception as e:
-        s3.abort_multipart_upload(Bucket=bucket, Key=key, UploadId=upload_id)
-        raise e
-
+    s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)
     url = f"{endpoint}/{bucket}/{key}"
-    print(f"[upload-doc] Multipart upload OK: {url}")
+    print(f"[upload-doc] PUT OK: {url}")
     return url
 
 
