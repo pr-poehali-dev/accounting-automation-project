@@ -1,5 +1,5 @@
 """
-Загрузка документа в S3 (project CDN или Reg.ru).
+Загрузка документа в Яндекс Object Storage.
 POST / — принимает base64-файл, загружает в S3, возвращает URL.
 Body: { file_b64, file_name, mime_type, doc_id }
 """
@@ -11,7 +11,7 @@ import traceback
 import psycopg2
 import boto3
 from botocore.config import Config
-from datetime import datetime, timezone
+from datetime import datetime
 
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p79040548_accounting_automatio")
@@ -39,44 +39,33 @@ def get_s3_settings(cur):
     return {"bucket": row[0], "endpoint": (row[1] or "").rstrip("/"), "access_key": row[2], "secret_key": row[3]}
 
 
-def upload_via_boto3(endpoint, bucket, key, data, content_type, access_key, secret_key):
-    """Загружает файл через обычный put_object с жёстким таймаутом 15 сек."""
-    print(f"[upload-doc] PUT to {endpoint}/{bucket}/{key}, size={len(data)}")
+def upload_to_yandex(endpoint, bucket, key, data, content_type, access_key, secret_key):
+    """Загружает файл в Яндекс Object Storage через boto3."""
+    if not endpoint.startswith("http"):
+        endpoint = "https://" + endpoint
+    print(f"[upload-doc] PUT {endpoint}/{bucket}/{key}, size={len(data)}")
     s3 = boto3.client(
         "s3",
         endpoint_url=endpoint,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
         config=Config(
-            connect_timeout=8,
-            read_timeout=15,
-            retries={"max_attempts": 0},
+            connect_timeout=10,
+            read_timeout=20,
+            retries={"max_attempts": 1},
             s3={"addressing_style": "path"},
         ),
-        region_name="us-east-1",
+        region_name="ru-central1",
     )
     s3.put_object(Bucket=bucket, Key=key, Body=data, ContentType=content_type)
-    url = f"{endpoint}/{bucket}/{key}"
-    print(f"[upload-doc] PUT OK: {url}")
-    return url
-
-
-def upload_to_project_s3(key, data, content_type):
-    """Сохраняем в S3 проекта (poehali.dev CDN) — всегда доступен."""
-    proj_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
-    s3p = boto3.client(
-        "s3",
-        endpoint_url="https://bucket.poehali.dev",
-        aws_access_key_id=proj_key,
-        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
-    )
-    s3p.put_object(Bucket="files", Key=key, Body=data, ContentType=content_type)
-    url = f"https://cdn.poehali.dev/projects/{proj_key}/bucket/{key}"
-    print(f"[upload-doc] Saved to project S3: {url}")
+    # Публичный URL Яндекса: https://storage.yandexcloud.net/{bucket}/{key}
+    url = f"https://storage.yandexcloud.net/{bucket}/{key}"
+    print(f"[upload-doc] OK: {url}")
     return url
 
 
 def handler(event: dict, context) -> dict:
+    """Принимает base64-файл и загружает его в Яндекс Object Storage."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
@@ -109,6 +98,7 @@ def handler(event: dict, context) -> dict:
         conn = get_conn()
         cur = conn.cursor()
 
+        # Проверка дубликата по хешу файла
         cur.execute(
             f"SELECT id, name, created_at FROM {SCHEMA}.documents WHERE file_hash=%s LIMIT 1",
             (file_hash,)
@@ -124,28 +114,23 @@ def handler(event: dict, context) -> dict:
             })
 
         s3cfg = get_s3_settings(cur)
+        if not s3cfg:
+            return resp(400, {"error": "Яндекс Object Storage не настроен. Укажите ключи в Панели администратора."})
 
         now = datetime.now()
         folder = f"documents/{now.year}/{now.month:02d}"
         safe_name = (file_name or "document").replace(" ", "_").replace("/", "_")
         key = f"{folder}/{now.strftime('%H%M%S')}_{safe_name}"
 
-        if s3cfg:
-            endpoint = s3cfg["endpoint"]
-            if not endpoint.startswith("http"):
-                endpoint = "https://" + endpoint
-            try:
-                file_url = upload_via_boto3(
-                    endpoint, s3cfg["bucket"], key,
-                    file_bytes, mime_type,
-                    s3cfg["access_key"], s3cfg["secret_key"]
-                )
-                print(f"[upload-doc] Uploaded to Reg.ru S3: {file_url}")
-            except Exception as e:
-                print(f"[upload-doc] Reg.ru S3 error ({type(e).__name__}: {e}) — fallback to project S3")
-                file_url = upload_to_project_s3(key, file_bytes, mime_type)
-        else:
-            file_url = upload_to_project_s3(key, file_bytes, mime_type)
+        try:
+            file_url = upload_to_yandex(
+                s3cfg["endpoint"], s3cfg["bucket"], key,
+                file_bytes, mime_type,
+                s3cfg["access_key"], s3cfg["secret_key"]
+            )
+        except Exception as e:
+            print(f"[upload-doc] Yandex S3 error: {traceback.format_exc()}")
+            return resp(500, {"error": f"Ошибка загрузки в Яндекс S3: {str(e)}"})
 
         if doc_id:
             try:

@@ -1,14 +1,15 @@
 """
-Настройки Reg.ru S3: получение, обновление, тест подключения.
-GET /          — текущие настройки (секретный ключ замаскирован)
-PUT /          — сохранить настройки
-GET /?action=test — проверить подключение к бакету
+Настройки Яндекс Object Storage: получение, обновление, тест подключения.
+GET /              — текущие настройки (секретный ключ замаскирован)
+PUT /              — сохранить настройки
+GET /?action=test  — проверить подключение к бакету
 """
 import json
 import os
 import psycopg2
 import boto3
-from botocore.exceptions import ClientError, EndpointResolutionError, NoCredentialsError
+from botocore.config import Config
+from botocore.exceptions import ClientError, NoCredentialsError
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p79040548_accounting_automatio")
 CORS = {
@@ -17,6 +18,8 @@ CORS = {
     "Access-Control-Allow-Headers": "Content-Type",
     "Content-Type": "application/json",
 }
+
+YANDEX_ENDPOINT = "https://storage.yandexcloud.net"
 
 
 def get_conn():
@@ -44,6 +47,7 @@ def get_settings(cur):
 
 
 def handler(event: dict, context) -> dict:
+    """Управляет настройками Яндекс Object Storage: чтение, сохранение, тест подключения."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
@@ -54,13 +58,13 @@ def handler(event: dict, context) -> dict:
     cur = conn.cursor()
 
     try:
-        # GET /?action=test
+        # GET /?action=test — тест подключения
         if method == "GET" and qs.get("action") == "test":
             s = get_settings(cur)
             if not s or not s["access_key"] or not s["bucket_name"]:
-                return resp(200, {"ok": False, "error": "Настройки S3 не заполнены"})
+                return resp(200, {"ok": False, "error": "Настройки Яндекс S3 не заполнены"})
             try:
-                endpoint = s["endpoint_url"].rstrip("/")
+                endpoint = s["endpoint_url"].rstrip("/") if s["endpoint_url"] else YANDEX_ENDPOINT
                 if not endpoint.startswith("http"):
                     endpoint = "https://" + endpoint
                 client = boto3.client(
@@ -68,37 +72,50 @@ def handler(event: dict, context) -> dict:
                     endpoint_url=endpoint,
                     aws_access_key_id=s["access_key"],
                     aws_secret_access_key=s["secret_key"],
+                    config=Config(
+                        connect_timeout=8,
+                        read_timeout=10,
+                        s3={"addressing_style": "path"},
+                    ),
+                    region_name="ru-central1",
                 )
                 client.head_bucket(Bucket=s["bucket_name"])
-                return resp(200, {"ok": True, "message": f"Доступ к бакету «{s['bucket_name']}» настроен успешно!"})
+                return resp(200, {"ok": True, "message": f"Подключение к бакету «{s['bucket_name']}» успешно!"})
             except ClientError as e:
                 code = e.response["Error"]["Code"]
                 msg = e.response["Error"].get("Message", str(e))
-                return resp(200, {"ok": False, "error": f"S3 ошибка {code}: {msg}"})
+                return resp(200, {"ok": False, "error": f"Ошибка {code}: {msg}"})
+            except NoCredentialsError:
+                return resp(200, {"ok": False, "error": "Неверный Access Key ID или Secret Key"})
             except Exception as e:
                 return resp(200, {"ok": False, "error": str(e)})
 
-        # GET /
+        # GET / — получить текущие настройки
         if method == "GET":
             s = get_settings(cur)
             if not s:
-                return resp(200, {"settings": {"bucket_name": "", "endpoint_url": "https://s3.regru.cloud", "access_key": "", "secret_key_masked": ""}})
+                return resp(200, {"settings": {
+                    "bucket_name": "",
+                    "endpoint_url": YANDEX_ENDPOINT,
+                    "access_key": "",
+                    "secret_key_masked": "",
+                    "configured": False,
+                }})
             return resp(200, {"settings": {
                 "bucket_name": s["bucket_name"],
-                "endpoint_url": s["endpoint_url"],
+                "endpoint_url": s["endpoint_url"] or YANDEX_ENDPOINT,
                 "access_key": s["access_key"],
                 "secret_key_masked": mask(s["secret_key"]),
                 "configured": bool(s["access_key"] and s["bucket_name"]),
             }})
 
-        # PUT /
+        # PUT / — сохранить настройки
         if method == "PUT":
             body = json.loads(event.get("body") or "{}")
             s = get_settings(cur)
             bucket = body.get("bucket_name", s["bucket_name"] if s else "")
-            endpoint = body.get("endpoint_url", s["endpoint_url"] if s else "https://s3.regru.cloud")
+            endpoint = body.get("endpoint_url", s["endpoint_url"] if s else YANDEX_ENDPOINT) or YANDEX_ENDPOINT
             access = body.get("access_key", s["access_key"] if s else "")
-            # secret только если передан и непустой
             secret = body.get("secret_key") or (s["secret_key"] if s else "")
 
             if s:
@@ -109,11 +126,16 @@ def handler(event: dict, context) -> dict:
                 """, (bucket, endpoint, access, secret))
             else:
                 cur.execute(f"""
-                    INSERT INTO {SCHEMA}.s3_settings (id,bucket_name,endpoint_url,access_key,secret_key)
-                    VALUES (1,%s,%s,%s,%s)
+                    INSERT INTO {SCHEMA}.s3_settings (id, bucket_name, endpoint_url, access_key, secret_key)
+                    VALUES (1, %s, %s, %s, %s)
                 """, (bucket, endpoint, access, secret))
             conn.commit()
-            return resp(200, {"ok": True, "settings": {"bucket_name": bucket, "endpoint_url": endpoint, "access_key": access, "secret_key_masked": mask(secret)}})
+            return resp(200, {"ok": True, "settings": {
+                "bucket_name": bucket,
+                "endpoint_url": endpoint,
+                "access_key": access,
+                "secret_key_masked": mask(secret),
+            }})
 
         return resp(405, {"error": "Method not allowed"})
 
