@@ -10,6 +10,8 @@ const URLS = {
   uploadDoc: "https://functions.poehali.dev/cc362dea-3988-4a28-a94e-166b527ac26c",
   generatePdf: "https://functions.poehali.dev/fff58902-afa3-4eb6-8403-6975c2c5ce0b",
   dbMigrate: "https://functions.poehali.dev/cf3af67b-397c-498e-a95d-8265086d8fff",
+  docsPdf: "https://functions.poehali.dev/cd1cab49-82a0-450c-9939-2afd35536b4b",
+  migrateDocsToS3: "https://functions.poehali.dev/8625f2ed-180d-4cb3-8be1-226e2e018479",
 };
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
@@ -211,6 +213,16 @@ export const api = {
       }),
     test: () => request<{ ok: boolean; error?: string; message?: string }>(`${URLS.s3Settings}?action=test`),
   },
+
+  // ─── Docs PDF (фото документов) ─────────────────────────
+  docsPdf: async (ids?: number[]): Promise<{ ok: boolean; filename?: string; pdf_b64?: string; count?: number; error?: string }> => {
+    const qs = ids && ids.length ? `?ids=${ids.join(",")}` : "";
+    return request<{ ok: boolean; filename?: string; pdf_b64?: string; count?: number; error?: string }>(`${URLS.docsPdf}${qs}`);
+  },
+
+  // ─── Migrate docs to Yandex S3 ──────────────────────────
+  migrateDocsToS3: (): Promise<{ ok: boolean; total: number; migrated: number; errors_count: number; errors: { id: number; name: string; error: string }[] }> =>
+    request<{ ok: boolean; total: number; migrated: number; errors_count: number; errors: { id: number; name: string; error: string }[] }>(URLS.migrateDocsToS3, { method: "POST" }),
 
   // ─── Upload document to S3 ──────────────────────────────
   uploadDoc: async (params: { file_b64: string; file_name: string; mime_type: string; doc_id?: number }): Promise<{ ok: boolean; url: string; key: string; duplicate?: boolean; existing_name?: string; existing_date?: string; existing_id?: number }> => {

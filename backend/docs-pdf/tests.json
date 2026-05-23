@@ -7,17 +7,11 @@
       "expectedStatus": 200
     },
     {
-      "name": "GET reports list",
+      "name": "GET PDF no docs",
       "method": "GET",
-      "path": "/",
-      "expectedStatus": 200
-    },
-    {
-      "name": "GET summary",
-      "method": "GET",
-      "path": "/?action=summary",
+      "path": "/?ids=999999",
       "expectedStatus": 200,
-      "expectedBody": {"income": 0},
+      "expectedBody": {"ok": false},
       "bodyMatcher": "partial"
     }
   ]
