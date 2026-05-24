@@ -31,7 +31,7 @@ const BANNERS = [
     img: "https://cdn.poehali.dev/projects/c9681124-9e6c-427c-98d2-241fbe701153/files/4e07e443-2aee-4874-9dbe-9a6f3732e740.jpg",
     tag: "Простота и надёжность",
     title: "Максимальная простота\nфинансового учёта",
-    sub: "Авторская программа Д. А. Буцкого — надёжно, быстро, без лишнего",
+    sub: "Авторская программа — надёжно, быстро, без лишнего",
     emblem: "coa",
     imgPos: "center top",
   },
@@ -39,7 +39,7 @@ const BANNERS = [
     img: "",
     tag: "Финансовые технологии",
     title: "Butsky Group",
-    sub: "Авторская программа бухгалтерского учёта Д. А. Буцкого",
+    sub: "Авторская программа бухгалтерского учёта",
     emblem: "brand",
   },
 ];
@@ -116,7 +116,7 @@ function HeroBanner() {
               </div>
             </div>
             <div className="text-white/50 text-xs tracking-wider text-center max-w-xs">
-              Авторская программа бухгалтерского учёта Д. А. Буцкого
+              Авторская программа бухгалтерского учёта
             </div>
             {/* Декоративная линия */}
             <div className="flex items-center gap-3">

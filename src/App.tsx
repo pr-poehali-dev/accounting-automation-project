@@ -108,7 +108,7 @@ const App = () => {
                 <span className="text-xs font-bold text-[#0284C7]">ДБ</span>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold truncate">Д. А. Буцкий</div>
+                <div className="text-xs font-semibold truncate">Администратор</div>
                 <div className="text-[11px] text-muted-foreground truncate">Butsky Group</div>
               </div>
             </div>
@@ -147,7 +147,7 @@ const App = () => {
                 <div className="w-6 h-6 rounded-full bg-[#0284C7]/20 border border-[#0284C7]/40 flex items-center justify-center flex-shrink-0">
                   <span className="text-[10px] font-bold text-[#0284C7]">ДБ</span>
                 </div>
-                <span className="text-xs hidden sm:block font-medium">Д. А. Буцкий</span>
+                <span className="text-xs hidden sm:block font-medium">Администратор</span>
               </div>
             </div>
           </header>
