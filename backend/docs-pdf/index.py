@@ -1,6 +1,6 @@
 """
 Генерация PDF со списком документов и их фотографиями.
-Сохраняет PDF в CDN поехали.dev и возвращает URL.
+Сохраняет PDF в Яндекс S3 и возвращает URL.
 GET / — все документы (до 40)
 GET /?ids=1,2,3 — только указанные документы
 """
@@ -12,6 +12,7 @@ import boto3
 import requests
 import psycopg2
 from datetime import datetime
+from botocore.config import Config
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p79040548_accounting_automatio")
 CORS = {
@@ -23,6 +24,9 @@ CORS = {
 
 MAX_IMG_PX = 900
 JPEG_QUALITY = 60
+FONT_PATH = "/tmp/DejaVuSans.ttf"
+FONT_S3_KEY = "fonts/DejaVuSans.ttf"
+FONT_FALLBACK_URL = "https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf"
 
 
 def get_conn():
@@ -31,6 +35,60 @@ def get_conn():
 
 def resp(status, body):
     return {"statusCode": status, "headers": CORS, "body": json.dumps(body, ensure_ascii=False, default=str)}
+
+
+def get_poehali_s3():
+    return boto3.client(
+        "s3",
+        endpoint_url="https://bucket.poehali.dev",
+        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+    )
+
+
+def load_font() -> str:
+    """Загружает DejaVuSans с кириллицей. Возвращает имя шрифта."""
+    # Кэш
+    if os.path.exists(FONT_PATH) and os.path.getsize(FONT_PATH) > 50_000:
+        pass
+    else:
+        # Из S3 поехали
+        try:
+            s3 = get_poehali_s3()
+            obj = s3.get_object(Bucket="files", Key=FONT_S3_KEY)
+            data = obj["Body"].read()
+            if len(data) > 50_000:
+                with open(FONT_PATH, "wb") as f:
+                    f.write(data)
+                print(f"[docs-pdf] Font loaded from S3, size={len(data)}")
+        except Exception as e:
+            print(f"[docs-pdf] S3 font error: {e}")
+            # Из интернета
+            try:
+                r = requests.get(FONT_FALLBACK_URL, timeout=20)
+                if r.status_code == 200 and len(r.content) > 50_000:
+                    with open(FONT_PATH, "wb") as f:
+                        f.write(r.content)
+                    # Сохраняем в S3
+                    try:
+                        s3 = get_poehali_s3()
+                        s3.put_object(Bucket="files", Key=FONT_S3_KEY, Body=r.content, ContentType="font/ttf")
+                    except Exception:
+                        pass
+            except Exception as e2:
+                print(f"[docs-pdf] Font download failed: {e2}")
+
+    if os.path.exists(FONT_PATH) and os.path.getsize(FONT_PATH) > 50_000:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        try:
+            pdfmetrics.getFont("DejaVu")
+        except Exception:
+            pdfmetrics.registerFont(TTFont("DejaVu", FONT_PATH))
+            pdfmetrics.registerFont(TTFont("DejaVu-Bold", FONT_PATH))
+        return "DejaVu"
+
+    return "Helvetica"
 
 
 def compress_image(url: str):
@@ -61,7 +119,6 @@ def compress_image(url: str):
 
 
 def get_yandex_s3_cfg(conn):
-    """Читает настройки Яндекс S3 из БД."""
     cur = conn.cursor()
     try:
         cur.execute(f"SELECT bucket_name, endpoint_url, access_key, secret_key, use_yandex FROM {SCHEMA}.s3_settings WHERE id=1")
@@ -77,8 +134,6 @@ def get_yandex_s3_cfg(conn):
 
 
 def save_pdf(pdf_bytes: bytes, filename: str, yc) -> str:
-    """Сохраняет PDF в Яндекс S3 или CDN поехали.dev."""
-    from botocore.config import Config
     key = f"reports/{filename}"
     if yc:
         s3 = boto3.client(
@@ -96,9 +151,7 @@ def save_pdf(pdf_bytes: bytes, filename: str, yc) -> str:
         return url
     else:
         proj_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
-        s3 = boto3.client("s3", endpoint_url="https://bucket.poehali.dev",
-                          aws_access_key_id=proj_key,
-                          aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY", ""))
+        s3 = get_poehali_s3()
         s3.put_object(Bucket="files", Key=key, Body=pdf_bytes, ContentType="application/pdf")
         url = f"https://cdn.poehali.dev/projects/{proj_key}/bucket/{key}"
         print(f"[docs-pdf] Saved to CDN: {url}")
@@ -112,6 +165,9 @@ def generate_pdf(docs: list) -> bytes:
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, HRFlowable
 
+    font = load_font()
+    font_bold = "DejaVu-Bold" if font == "DejaVu" else "Helvetica-Bold"
+
     buf = io.BytesIO()
     pdf_doc = SimpleDocTemplate(buf, pagesize=A4,
         leftMargin=2*cm, rightMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
@@ -120,10 +176,13 @@ def generate_pdf(docs: list) -> bytes:
     cw = W - 4*cm
 
     styles = getSampleStyleSheet()
-    s_title = ParagraphStyle("t", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold", spaceAfter=6)
-    s_sub = ParagraphStyle("s", parent=styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.grey, spaceAfter=14)
-    s_name = ParagraphStyle("n", parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold", spaceAfter=2)
-    s_meta = ParagraphStyle("m", parent=styles["Normal"], fontSize=8, fontName="Helvetica", textColor=colors.HexColor("#666666"), spaceAfter=5)
+    s_title = ParagraphStyle("t", parent=styles["Normal"], fontSize=16, fontName=font_bold, spaceAfter=6)
+    s_sub   = ParagraphStyle("s", parent=styles["Normal"], fontSize=9,  fontName=font, textColor=colors.grey, spaceAfter=14)
+    s_name  = ParagraphStyle("n", parent=styles["Normal"], fontSize=11, fontName=font_bold, spaceAfter=2)
+    s_meta  = ParagraphStyle("m", parent=styles["Normal"], fontSize=8,  fontName=font, textColor=colors.HexColor("#555555"), spaceAfter=5)
+
+    def safe(text: str) -> str:
+        return (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     story = []
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
@@ -133,8 +192,8 @@ def generate_pdf(docs: list) -> bytes:
     story.append(Spacer(1, 0.3*cm))
 
     for i, doc in enumerate(docs):
-        name = (doc.get("name") or "Без названия").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
-        meta_parts = [p for p in [
+        name = safe(doc.get("name") or "Без названия")
+        meta_parts = [safe(p) for p in [
             doc.get("rec_date") or str(doc.get("created_at") or "")[:10],
             doc.get("rec_type") or "",
             doc.get("rec_amount") or "",
@@ -143,7 +202,7 @@ def generate_pdf(docs: list) -> bytes:
 
         story.append(Paragraph(f"{i+1}. {name}", s_name))
         if meta_parts:
-            story.append(Paragraph((" • ".join(meta_parts)).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"), s_meta))
+            story.append(Paragraph(" • ".join(meta_parts), s_meta))
 
         s3_url = doc.get("s3_url") or ""
         if s3_url:
@@ -169,7 +228,7 @@ def generate_pdf(docs: list) -> bytes:
 
 
 def handler(event: dict, context) -> dict:
-    """Генерирует PDF с фото документов, сохраняет в Яндекс S3 и возвращает URL для скачивания."""
+    """Генерирует PDF с фото документов на русском языке, сохраняет в S3."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
