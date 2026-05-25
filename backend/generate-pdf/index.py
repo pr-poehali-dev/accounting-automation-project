@@ -308,6 +308,54 @@ def generate_report_pdf(transactions, date_from, date_to, income_total, expense_
     ]))
     story.append(table)
     story.append(Spacer(1, 0.8 * cm))
+
+    # ── Разбивка расходов по статьям затрат ──────────────────
+    expense_txs = [tx for tx in transactions if float(tx["amount"]) < 0]
+    if expense_txs:
+        by_cat: dict = {}
+        for tx in expense_txs:
+            cat = str(tx.get("category") or "Прочее")
+            by_cat[cat] = by_cat.get(cat, 0) + abs(float(tx["amount"]))
+        sorted_cats = sorted(by_cat.items(), key=lambda x: x[1], reverse=True)
+        total_exp = sum(v for _, v in sorted_cats)
+
+        story.append(P("Расходы по статьям затрат", size=13, bold=True))
+        story.append(Spacer(1, 0.3 * cm))
+
+        cat_hdr = ["Статья затрат", "Сумма", "Доля"]
+        cat_col_widths = [8 * cm, 4 * cm, 3 * cm]
+        cat_data = [[P(h, size=9, bold=True, color=colors.white) for h in cat_hdr]]
+        for cat, s in sorted_cats:
+            pct = f"{s / total_exp * 100:.1f}%" if total_exp > 0 else "—"
+            cat_data.append([
+                P(cat[:50], size=9),
+                P(fmt_rub(s), size=9, align=2),
+                P(pct, size=9, align=2),
+            ])
+        # Итого
+        cat_data.append([
+            P("ИТОГО РАСХОДОВ", size=9, bold=True),
+            P(fmt_rub(total_exp), size=9, bold=True, align=2),
+            P("100%", size=9, bold=True, align=2),
+        ])
+
+        cat_table = Table(cat_data, colWidths=cat_col_widths, repeatRows=1)
+        cat_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f8f8f8")]),
+            ("GRID", (0, 0), (-1, -2), 0.4, colors.HexColor("#cccccc")),
+            ("LINEABOVE", (0, -1), (-1, -1), 1.5, colors.black),
+            ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f0f0e0")),
+            ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(cat_table)
+        story.append(Spacer(1, 0.8 * cm))
+
     story.append(P(f"Документ сформирован: {date.today().strftime('%d.%m.%Y')}", size=8, color=colors.grey))
 
     doc.build(story)
