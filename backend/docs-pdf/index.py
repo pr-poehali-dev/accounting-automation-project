@@ -226,12 +226,13 @@ def generate_pdf(docs: list) -> bytes:
             if result:
                 img_bytes, img_w, img_h = result
                 try:
+                    from reportlab.lib.utils import ImageReader
                     scale = min(float(cw) / img_w, float(max_img_h) / img_h, 1.0)
                     draw_w = img_w * scale
                     draw_h = img_h * scale
                     img_x = margin + (cw - draw_w) / 2
                     img_y = y - draw_h
-                    c.drawImage(io.BytesIO(img_bytes), img_x, img_y, width=draw_w, height=draw_h)
+                    c.drawImage(ImageReader(io.BytesIO(img_bytes)), img_x, img_y, width=draw_w, height=draw_h)
                 except Exception as e:
                     print(f"[docs-pdf] canvas img err doc {doc.get('id')}: {e}")
                 img_bytes = None
