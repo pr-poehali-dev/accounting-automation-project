@@ -392,7 +392,21 @@ export default function Dashboard({ onNavigate }: Props) {
         </div>
 
         <div className="card-fin p-3 sm:p-5">
-          <div className="text-[10px] sm:text-xs uppercase tracking-wider sm:tracking-widest text-muted-foreground mb-1">Расходы по статьям</div>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="text-[10px] sm:text-xs uppercase tracking-wider sm:tracking-widest text-muted-foreground">Расходы по статьям</div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => handleChartYearChange(chartYear - 1)}
+                className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                <Icon name="ChevronLeft" size={12} />
+              </button>
+              <span className="font-mono-fin text-xs text-gold min-w-[34px] text-center">{chartYear}</span>
+              <button onClick={() => handleChartYearChange(chartYear + 1)}
+                disabled={chartYear >= CURRENT_YEAR}
+                className="w-5 h-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-30">
+                <Icon name="ChevronRight" size={12} />
+              </button>
+            </div>
+          </div>
           <div className="text-sm font-medium mb-4 sm:mb-5">Структура затрат</div>
           {loading ? (
             <div className="h-[220px] bg-secondary/30 animate-pulse rounded" />

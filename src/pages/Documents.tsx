@@ -886,10 +886,11 @@ export default function Documents() {
                 Загрузите документ — ИИ всё заполнит
               </div>
             )}
-            {docs.map((doc) => (
+            {docs.map((doc, idx) => (
               <div key={doc.id} className={`flex items-center gap-2.5 sm:gap-3 p-2.5 sm:p-3 rounded-lg cursor-pointer transition-all mb-1 ${selected?.id === doc.id ? "bg-gold/10 border border-gold/30" : "hover:bg-secondary border border-transparent"}`}>
                 <button onClick={() => handleSelect(doc)} className="flex-1 flex items-center gap-2.5 sm:gap-3 text-left min-w-0">
-                  <div className="w-9 h-9 rounded overflow-hidden flex items-center justify-center bg-secondary flex-shrink-0">
+                  <div className="relative w-9 h-9 rounded overflow-hidden flex items-center justify-center bg-secondary flex-shrink-0">
+                    <span className="absolute top-0 left-0 z-10 bg-black/60 text-white text-[9px] font-bold leading-none px-1 py-0.5 rounded-br">{idx + 1}</span>
                     {(doc.previewUrl || doc.s3_url) ? (
                       <img
                         src={doc.previewUrl || proxyImg(doc.s3_url)}
