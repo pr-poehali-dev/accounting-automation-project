@@ -17,23 +17,46 @@ function parsePeriodDates(period: string): { from: string; to: string } {
   return { from: "", to: "" };
 }
 
+// Скачать blob как файл
+function downloadBlob(blob: Blob, filename: string) {
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+}
+
 // Скачать файл по URL — через blob чтобы обойти cross-origin ограничения браузера
 async function downloadFromUrl(url: string, filename: string) {
   try {
     const res = await fetch(url);
     const blob = await res.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = blobUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    downloadBlob(blob, filename);
   } catch {
-    // Фолбэк — просто открыть в новой вкладке
     window.open(url, "_blank");
   }
+}
+
+// Генерация CSV из транзакций прямо на фронтенде
+async function downloadTransactionsCsv(dateFrom: string, dateTo: string, filename: string, taxableOnly = false) {
+  const res = await api.transactions.list({ date_from: dateFrom, date_to: dateTo });
+  const txs = taxableOnly ? res.transactions.filter((t) => t.is_taxable) : res.transactions;
+  const rows = [
+    ["Дата", "Тип", "Категория", "Описание", "Сумма (руб)", "Статус"],
+    ...txs.map((t) => [
+      String(t.date || "").slice(0, 10),
+      Number(t.amount) >= 0 ? "Доход" : "Расход",
+      t.category || "",
+      (t.description || "").replace(/"/g, '""'),
+      String(Math.abs(Number(t.amount))),
+      t.status || "",
+    ]),
+  ];
+  const csv = "\uFEFF" + rows.map((r) => r.map((c) => `"${c}"`).join(";")).join("\r\n");
+  downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), filename);
 }
 
 interface ReportWithDates extends TaxReport {
@@ -103,21 +126,29 @@ export default function TaxReports() {
     setTimeout(() => setGenerated(null), 8000);
   };
 
-  const handleDownload = (report: ReportWithDates, type: "tax" | "transactions") => {
+  const handleDownload = async (report: ReportWithDates, type: "tax" | "transactions") => {
     setDownloading(report.id);
     const dates = parsePeriodDates(report.period);
     const df = report.date_from || dates.from;
     const dt = report.date_to || dates.to;
-    const filename = type === "tax"
-      ? `налоговый_отчет_${df}_${dt}.csv`
-      : `операции_${df}_${dt}.csv`;
-    downloadFromUrl(api.exportUrl({ type, date_from: df, date_to: dt }), filename);
-    setTimeout(() => setDownloading(null), 2000);
+    try {
+      if (type === "transactions") {
+        await downloadTransactionsCsv(df, dt, `операции_${df}_${dt}.csv`, false);
+      } else {
+        await downloadTransactionsCsv(df, dt, `налоговый_${df}_${dt}.csv`, true);
+      }
+    } finally {
+      setDownloading(null);
+    }
   };
 
-  const handleDownloadDirect = (dateFrom: string, dateTo: string, name: string, type: "tax" | "transactions") => {
-    const filename = `${name.replace(/\s+/g, "_")}.csv`;
-    downloadFromUrl(api.exportUrl({ type, date_from: dateFrom, date_to: dateTo }), filename);
+  const handleDownloadDirect = async (dateFrom: string, dateTo: string, name: string, type: "tax" | "transactions") => {
+    const safeName = name.replace(/\s+/g, "_");
+    if (type === "transactions") {
+      await downloadTransactionsCsv(dateFrom, dateTo, `${safeName}_операции.csv`, false);
+    } else {
+      await downloadTransactionsCsv(dateFrom, dateTo, `${safeName}_налоговый.csv`, true);
+    }
   };
 
   const [pdfLoading, setPdfLoading] = useState<string | null>(null);
