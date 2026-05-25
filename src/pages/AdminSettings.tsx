@@ -211,8 +211,47 @@ export default function AdminSettings() {
 
   const currentModel = models.find((m) => m.id === settings.selected_model);
 
+  const currentVision = visionProviders.find((v) => v.id === (settings.vision_provider || "proxyapi-gpt-4o"));
+
   return (
     <div className="animate-fade-in w-full max-w-3xl space-y-3 sm:space-y-4">
+
+      {/* ── Сводка активных ИИ ──────────────────────────────── */}
+      <div className="card-fin p-3 sm:p-4 border border-gold/20">
+        <div className="text-[10px] sm:text-xs uppercase tracking-widest text-muted-foreground mb-3 gold-line pl-3">Активный ИИ сейчас</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {/* Чат-модель */}
+          <div className="bg-secondary/50 rounded-lg p-3 flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gold/15 flex items-center justify-center flex-shrink-0">
+              <Icon name="MessageSquare" size={15} className="text-gold" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">ИИ-ассистент (чат)</div>
+              <div className="text-sm font-semibold text-foreground truncate">{currentModel?.name || settings.selected_model}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{currentModel?.provider}</div>
+              <div className="mt-1.5 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-positive animate-pulse" />
+                <span className="text-[11px] text-positive">Используется для чата и анализа</span>
+              </div>
+            </div>
+          </div>
+          {/* Vision-модель */}
+          <div className="bg-secondary/50 rounded-lg p-3 flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center flex-shrink-0">
+              <Icon name="ScanLine" size={15} className="text-purple-400" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Распознавание документов</div>
+              <div className="text-sm font-semibold text-foreground truncate">{currentVision?.name || settings.vision_provider}</div>
+              <div className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{currentVision?.desc}</div>
+              <div className="mt-1.5 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                <span className="text-[11px] text-purple-300">Читает чеки, накладные, фото</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Model selection */}
       <div className="card-fin p-3 sm:p-5">

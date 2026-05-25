@@ -51,7 +51,7 @@ interface DeleteDialogProps {
 export function DeleteDialog({ deleteConfirmId, onConfirm, onCancel }: DeleteDialogProps) {
   if (deleteConfirmId === null) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="bg-card border border-border rounded-2xl w-full max-w-sm p-5 space-y-4 animate-fade-in">
         <div className="text-center">
           <div className="w-12 h-12 rounded-full bg-red-900/20 flex items-center justify-center mx-auto mb-3">
