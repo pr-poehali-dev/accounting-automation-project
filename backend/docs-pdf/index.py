@@ -158,8 +158,71 @@ def save_pdf(pdf_bytes: bytes, filename: str, yc) -> str:
         return url
 
 
+def draw_doc_slot(c, doc, num, x, y, slot_w, slot_h, font, max_img_h):
+    """Рисует один документ в заданном прямоугольнике (x,y — левый верхний угол)."""
+    from reportlab.lib.utils import ImageReader
+    from reportlab.lib.units import cm
+
+    font_b = "DejaVu-Bold" if font == "DejaVu" else "Helvetica-Bold"
+    font_r = font if font == "DejaVu" else "Helvetica"
+    pad = 0.3 * cm
+
+    cur_y = y - pad
+
+    # Номер и имя
+    name = (doc.get("name") or "Без названия")[:70]
+    c.setFont(font_b, 10)
+    c.setFillColorRGB(0, 0, 0)
+    c.drawString(x + pad, cur_y - 0.45*cm, f"{num}. {name}")
+    cur_y -= 0.7 * cm
+
+    # Метаданные
+    meta_parts = [p for p in [
+        doc.get("rec_date") or str(doc.get("created_at") or "")[:10],
+        doc.get("rec_type") or "",
+        doc.get("rec_amount") or "",
+        doc.get("rec_counterparty") or "",
+    ] if p]
+    if meta_parts:
+        c.setFont(font_r, 7)
+        c.setFillColorRGB(0.25, 0.45, 0.65)
+        c.drawString(x + pad, cur_y - 0.25*cm, " • ".join(meta_parts)[:90])
+        c.setFillColorRGB(0, 0, 0)
+        cur_y -= 0.5 * cm
+
+    # Разделитель
+    c.setDash(2, 4)
+    c.setStrokeColorRGB(0.75, 0.75, 0.75)
+    c.line(x + pad, cur_y, x + slot_w - pad, cur_y)
+    c.setDash()
+    c.setStrokeColorRGB(0, 0, 0)
+    cur_y -= 0.2 * cm
+
+    # Фото
+    s3_url = doc.get("s3_url") or ""
+    if s3_url:
+        result = compress_image(s3_url)
+        if result:
+            img_bytes, img_w, img_h = result
+            try:
+                avail_w = slot_w - 2 * pad
+                avail_h = min(max_img_h, cur_y - y + slot_h - 0.3*cm)
+                if avail_h > 0.5*cm:
+                    scale = min(avail_w / img_w, avail_h / img_h, 1.0)
+                    draw_w = img_w * scale
+                    draw_h = img_h * scale
+                    img_x = x + pad + (avail_w - draw_w) / 2
+                    img_y = cur_y - draw_h
+                    c.drawImage(ImageReader(io.BytesIO(img_bytes)), img_x, img_y,
+                                width=draw_w, height=draw_h)
+            except Exception as e:
+                print(f"[docs-pdf] img err doc {doc.get('id')}: {e}")
+            img_bytes = None
+            gc.collect()
+
+
 def generate_pdf(docs: list) -> bytes:
-    """Генерация PDF через canvas — постраничный рендер, минимальное потребление памяти."""
+    """2 документа на страницу. Минимальное потребление памяти."""
     from reportlab.pdfgen import canvas as rl_canvas
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import cm
@@ -167,76 +230,48 @@ def generate_pdf(docs: list) -> bytes:
     font = load_font()
 
     W, H = A4
-    margin = 2 * cm
-    cw = W - 2 * margin
-    max_img_h = 9 * cm
+    margin = 1.2 * cm
+    gutter = 0.4 * cm          # зазор между строками
+    slot_h = (H - 2*margin - gutter) / 2   # высота одного слота = половина страницы
+    slot_w = W - 2 * margin
+    max_img_h = slot_h - 1.8 * cm          # место для фото (за вычетом текста)
 
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=A4)
-
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
 
     # Титульная страница
-    c.setFont(font if font == "DejaVu" else "Helvetica-Bold", 18)
+    font_b = "DejaVu-Bold" if font == "DejaVu" else "Helvetica-Bold"
+    font_r = font if font == "DejaVu" else "Helvetica"
+    c.setFont(font_b, 18)
     c.drawString(margin, H - margin - 0.5*cm, "Список документов")
-    c.setFont(font if font == "DejaVu" else "Helvetica", 10)
+    c.setFont(font_r, 10)
     c.setFillColorRGB(0.5, 0.5, 0.5)
     c.drawString(margin, H - margin - 1.3*cm, f"Сформирован: {now_str}   Документов: {len(docs)}")
     c.setFillColorRGB(0, 0, 0)
     c.line(margin, H - margin - 1.7*cm, W - margin, H - margin - 1.7*cm)
     c.showPage()
 
-    # По одному документу на страницу
-    for i, doc in enumerate(docs):
-        name = (doc.get("name") or "Без названия")[:80]
-        meta_parts = [p for p in [
-            doc.get("rec_date") or str(doc.get("created_at") or "")[:10],
-            doc.get("rec_type") or "",
-            doc.get("rec_amount") or "",
-            doc.get("rec_counterparty") or "",
-        ] if p]
+    # По 2 документа на страницу
+    for page_start in range(0, len(docs), 2):
+        pair = docs[page_start: page_start + 2]
 
-        y = H - margin
+        # Верхний слот
+        top_y = H - margin
+        draw_doc_slot(c, pair[0], page_start + 1, margin, top_y, slot_w, slot_h, font, max_img_h)
 
-        # Номер и имя
-        c.setFont(font if font == "DejaVu" else "Helvetica-Bold", 12)
-        c.drawString(margin, y - 0.6*cm, f"{i+1}. {name}")
-        y -= 1.0 * cm
-
-        # Метаданные
-        if meta_parts:
-            c.setFont(font if font == "DejaVu" else "Helvetica", 8)
-            c.setFillColorRGB(0.35, 0.35, 0.35)
-            c.drawString(margin, y - 0.3*cm, " • ".join(meta_parts)[:100])
-            c.setFillColorRGB(0, 0, 0)
-            y -= 0.7 * cm
-
-        # Разделитель
-        c.setDash(2, 4)
-        c.setStrokeColorRGB(0.8, 0.8, 0.8)
-        c.line(margin, y, W - margin, y)
-        c.setDash()
+        # Разделительная линия между слотами
+        sep_y = H - margin - slot_h - gutter / 2
+        c.setStrokeColorRGB(0.85, 0.85, 0.85)
+        c.setLineWidth(0.5)
+        c.line(margin, sep_y, W - margin, sep_y)
+        c.setLineWidth(1)
         c.setStrokeColorRGB(0, 0, 0)
-        y -= 0.3 * cm
 
-        # Фото
-        s3_url = doc.get("s3_url") or ""
-        if s3_url:
-            result = compress_image(s3_url)
-            if result:
-                img_bytes, img_w, img_h = result
-                try:
-                    from reportlab.lib.utils import ImageReader
-                    scale = min(float(cw) / img_w, float(max_img_h) / img_h, 1.0)
-                    draw_w = img_w * scale
-                    draw_h = img_h * scale
-                    img_x = margin + (cw - draw_w) / 2
-                    img_y = y - draw_h
-                    c.drawImage(ImageReader(io.BytesIO(img_bytes)), img_x, img_y, width=draw_w, height=draw_h)
-                except Exception as e:
-                    print(f"[docs-pdf] canvas img err doc {doc.get('id')}: {e}")
-                img_bytes = None
-                gc.collect()
+        # Нижний слот (если есть второй документ)
+        if len(pair) > 1:
+            bot_y = H - margin - slot_h - gutter
+            draw_doc_slot(c, pair[1], page_start + 2, margin, bot_y, slot_w, slot_h, font, max_img_h)
 
         c.showPage()
 
