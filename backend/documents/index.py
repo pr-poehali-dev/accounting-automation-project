@@ -115,11 +115,19 @@ def handler(event: dict, context) -> dict:
             doc_id = qs.get("id")
             if not doc_id:
                 return resp(400, {"error": "id required"})
+            # Находим связанную транзакцию до удаления документа
+            cur.execute(f"SELECT id FROM {SCHEMA}.transactions WHERE document_id = %s", (doc_id,))
+            tx_rows = [r[0] for r in cur.fetchall()]
+            # Удаляем документ
             cur.execute(f"DELETE FROM {SCHEMA}.documents WHERE id = %s RETURNING id", (doc_id,))
-            conn.commit()
             if not cur.fetchone():
+                conn.commit()
                 return resp(404, {"error": "Not found"})
-            return resp(200, {"ok": True})
+            # Удаляем связанные транзакции
+            if tx_rows:
+                cur.execute(f"DELETE FROM {SCHEMA}.transactions WHERE id = ANY(%s)", (tx_rows,))
+            conn.commit()
+            return resp(200, {"ok": True, "deleted_transactions": len(tx_rows)})
 
         return resp(405, {"error": "Method not allowed"})
 
