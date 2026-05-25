@@ -258,7 +258,7 @@ def handler(event: dict, context) -> dict:
                 FROM {SCHEMA}.documents
                 WHERE status = 'done' AND s3_url IS NOT NULL
                 ORDER BY created_at DESC
-                LIMIT 40
+                LIMIT 100
             """)
 
         cols = ["id", "name", "s3_url", "rec_type", "rec_amount", "rec_date", "rec_counterparty", "created_at"]
