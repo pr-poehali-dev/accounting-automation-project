@@ -29,15 +29,16 @@ function downloadBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
 }
 
-// Скачать файл по URL — через blob чтобы обойти cross-origin ограничения браузера
-async function downloadFromUrl(url: string, filename: string) {
-  try {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    downloadBlob(blob, filename);
-  } catch {
-    window.open(url, "_blank");
-  }
+// Скачать файл по URL
+function downloadFromUrl(url: string, filename: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 // Генерация CSV из транзакций прямо на фронтенде
