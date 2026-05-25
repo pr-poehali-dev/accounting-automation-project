@@ -338,7 +338,11 @@ export default function Documents() {
     a.href = url; a.download = selected.name || "document.jpg"; a.target = "_blank"; a.click();
   };
 
-  const handleDelete = (id: number) => setDeleteConfirmId(id);
+  const handleDelete = (id: number) => {
+    setDeleteConfirmId(id);
+    // Прокручиваем страницу в начало чтобы модалка была по центру экрана
+    document.querySelector("main")?.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const confirmDelete = async () => {
     if (!deleteConfirmId) return;
     const id = deleteConfirmId;
