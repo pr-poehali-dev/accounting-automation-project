@@ -41,21 +41,58 @@ function downloadFromUrl(url: string, filename: string) {
   document.body.removeChild(a);
 }
 
-// Генерация CSV из транзакций прямо на фронтенде
-async function downloadTransactionsCsv(dateFrom: string, dateTo: string, filename: string, taxableOnly = false) {
+function fmtNum(n: number) {
+  return n.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Сводный финансовый отчёт: итоги + разбивка по статьям
+async function downloadSummaryReport(dateFrom: string, dateTo: string, filename: string) {
   const res = await api.transactions.list({ date_from: dateFrom, date_to: dateTo });
-  const txs = taxableOnly ? res.transactions.filter((t) => t.is_taxable) : res.transactions;
-  const rows = [
+  const txs = res.transactions.filter((t) => t.status !== "Отменено");
+
+  const income = txs.filter((t) => Number(t.amount) > 0);
+  const expense = txs.filter((t) => Number(t.amount) < 0);
+
+  const totalIncome = income.reduce((s, t) => s + Number(t.amount), 0);
+  const totalExpense = expense.reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
+  const profit = totalIncome - totalExpense;
+
+  // Группировка расходов по статьям
+  const byCategory: Record<string, number> = {};
+  expense.forEach((t) => {
+    const cat = t.category || "Прочее";
+    byCategory[cat] = (byCategory[cat] || 0) + Math.abs(Number(t.amount));
+  });
+  const catRows = Object.entries(byCategory)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cat, sum]) => [cat, fmtNum(sum), fmtNum((sum / totalExpense) * 100) + "%"]);
+
+  const sep = ["", "", "", "", "", ""];
+  const rows: string[][] = [
+    ["ФИНАНСОВЫЙ ОТЧЁТ", "", "", "", "", ""],
+    [`Период: ${dateFrom} — ${dateTo}`, "", "", "", "", ""],
+    sep,
+    ["ИТОГИ", "", "", "", "", ""],
+    ["Доходы", fmtNum(totalIncome), "", "", "", ""],
+    ["Расходы", fmtNum(totalExpense), "", "", "", ""],
+    ["Чистая прибыль", fmtNum(profit), "", "", "", ""],
+    sep,
+    ["РАСХОДЫ ПО СТАТЬЯМ ЗАТРАТ", "", "", "", "", ""],
+    ["Статья", "Сумма (руб)", "Доля", "", "", ""],
+    ...catRows,
+    sep,
+    ["ОПЕРАЦИИ", "", "", "", "", ""],
     ["Дата", "Тип", "Категория", "Описание", "Сумма (руб)", "Статус"],
     ...txs.map((t) => [
       String(t.date || "").slice(0, 10),
       Number(t.amount) >= 0 ? "Доход" : "Расход",
       t.category || "",
       (t.description || "").replace(/"/g, '""'),
-      String(Math.abs(Number(t.amount))),
+      fmtNum(Math.abs(Number(t.amount))),
       t.status || "",
     ]),
   ];
+
   const csv = "\uFEFF" + rows.map((r) => r.map((c) => `"${c}"`).join(";")).join("\r\n");
   downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), filename);
 }
@@ -127,29 +164,21 @@ export default function TaxReports() {
     setTimeout(() => setGenerated(null), 8000);
   };
 
-  const handleDownload = async (report: ReportWithDates, type: "tax" | "transactions") => {
+  const handleDownload = async (report: ReportWithDates) => {
     setDownloading(report.id);
     const dates = parsePeriodDates(report.period);
     const df = report.date_from || dates.from;
     const dt = report.date_to || dates.to;
     try {
-      if (type === "transactions") {
-        await downloadTransactionsCsv(df, dt, `операции_${df}_${dt}.csv`, false);
-      } else {
-        await downloadTransactionsCsv(df, dt, `налоговый_${df}_${dt}.csv`, true);
-      }
+      await downloadSummaryReport(df, dt, `отчёт_${df}_${dt}.csv`);
     } finally {
       setDownloading(null);
     }
   };
 
-  const handleDownloadDirect = async (dateFrom: string, dateTo: string, name: string, type: "tax" | "transactions") => {
+  const handleDownloadDirect = async (dateFrom: string, dateTo: string, name: string) => {
     const safeName = name.replace(/\s+/g, "_");
-    if (type === "transactions") {
-      await downloadTransactionsCsv(dateFrom, dateTo, `${safeName}_операции.csv`, false);
-    } else {
-      await downloadTransactionsCsv(dateFrom, dateTo, `${safeName}_налоговый.csv`, true);
-    }
+    await downloadSummaryReport(dateFrom, dateTo, `${safeName}.csv`);
   };
 
   const [pdfLoading, setPdfLoading] = useState<string | null>(null);
@@ -294,32 +323,22 @@ export default function TaxReports() {
               ? <><div className="w-4 h-4 rounded-full border-2 border-border border-t-transparent animate-spin" />Формируется...</>
               : <><Icon name="Images" size={15} /> Скачать документы PDF</>}
           </button>
-          <div className="flex gap-2">
-            <button onClick={() => handleDownloadDirect(curFrom, curTo, "операции", "transactions")}
-              className="flex-1 py-2 border border-border rounded text-xs text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors flex items-center justify-center gap-1.5">
-              <Icon name="Download" size={13} /> Операции CSV
-            </button>
-            <button onClick={() => handleDownloadDirect(curFrom, curTo, "налоговый", "tax")}
-              className="flex-1 py-2 border border-border rounded text-xs text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors flex items-center justify-center gap-1.5">
-              <Icon name="Download" size={13} /> Налоговый CSV
-            </button>
-          </div>
+          <button onClick={() => handleDownloadDirect(curFrom, curTo, `отчёт_${curFrom}_${curTo}`)}
+            className="w-full py-2 border border-border rounded text-xs text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors flex items-center justify-center gap-1.5">
+            <Icon name="Download" size={13} /> Сводный отчёт CSV
+          </button>
 
           {generated && (
             <div className="mt-3 p-3 rounded-lg bg-green-900/20 border border-green-900/30 text-positive text-xs animate-fade-in space-y-2">
               <div className="flex items-center gap-2"><Icon name="CheckCircle" size={14} /> Отчёт сохранён в архив</div>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-2 gap-1.5">
                 <button onClick={() => handleDownloadPdf(generated.dateFrom, generated.dateTo, generated.name)}
                   className="py-1.5 bg-gold/20 text-gold border border-gold/30 rounded text-xs flex items-center justify-center gap-1 font-medium">
                   <Icon name="FileDown" size={12} /> PDF
                 </button>
-                <button onClick={() => handleDownloadDirect(generated.dateFrom, generated.dateTo, generated.name, "transactions")}
+                <button onClick={() => handleDownloadDirect(generated.dateFrom, generated.dateTo, generated.name)}
                   className="py-1.5 bg-positive/20 text-positive border border-positive/30 rounded text-xs flex items-center justify-center gap-1">
-                  <Icon name="Download" size={12} /> CSV
-                </button>
-                <button onClick={() => handleDownloadDirect(generated.dateFrom, generated.dateTo, generated.name, "tax")}
-                  className="py-1.5 bg-positive/20 text-positive border border-positive/30 rounded text-xs flex items-center justify-center gap-1">
-                  <Icon name="Download" size={12} /> Налог
+                  <Icon name="Download" size={12} /> Сводный CSV
                 </button>
               </div>
             </div>
@@ -383,19 +402,13 @@ export default function TaxReports() {
                               : <Icon name="FileDown" size={12} />} PDF
                           </button>
                           <button
-                            onClick={() => handleDownload(r, "tax")}
+                            onClick={() => handleDownload(r)}
                             disabled={downloading === r.id}
                             className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors disabled:opacity-50">
                             {downloading === r.id
                               ? <div className="w-3 h-3 rounded-full border border-muted-foreground border-t-transparent animate-spin" />
                               : <Icon name="Download" size={12} />}
-                            CSV налог
-                          </button>
-                          <button
-                            onClick={() => handleDownload(r, "transactions")}
-                            disabled={downloading === r.id}
-                            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-gold/40 transition-colors disabled:opacity-50">
-                            <Icon name="Download" size={12} /> Операции
+                            Операции
                           </button>
                         </div>
                       </div>
