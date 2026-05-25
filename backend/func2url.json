@@ -1,7 +1,6 @@
 {
   "categories": "https://functions.poehali.dev/c2ced8af-0c23-4b87-8705-185ef89e243e",
   "img-proxy": "https://functions.poehali.dev/175171fe-6d38-4594-af4a-511eff3025ef",
-  "migrate-docs-to-s3": "https://functions.poehali.dev/8625f2ed-180d-4cb3-8be1-226e2e018479",
   "docs-pdf": "https://functions.poehali.dev/cd1cab49-82a0-450c-9939-2afd35536b4b",
   "upload-doc": "https://functions.poehali.dev/cc362dea-3988-4a28-a94e-166b527ac26c",
   "generate-pdf": "https://functions.poehali.dev/fff58902-afa3-4eb6-8403-6975c2c5ce0b",

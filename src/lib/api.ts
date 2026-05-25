@@ -9,9 +9,7 @@ const URLS = {
   s3Settings: "https://functions.poehali.dev/994a3fe5-ea96-4bca-bad7-09a990b48212",
   uploadDoc: "https://functions.poehali.dev/cc362dea-3988-4a28-a94e-166b527ac26c",
   generatePdf: "https://functions.poehali.dev/fff58902-afa3-4eb6-8403-6975c2c5ce0b",
-  dbMigrate: "https://functions.poehali.dev/cf3af67b-397c-498e-a95d-8265086d8fff",
   docsPdf: "https://functions.poehali.dev/cd1cab49-82a0-450c-9939-2afd35536b4b",
-  migrateDocsToS3: "https://functions.poehali.dev/8625f2ed-180d-4cb3-8be1-226e2e018479",
 };
 
 /** Оборачивает URL из Яндекс S3 в прокси для обхода CORS */
@@ -209,10 +207,6 @@ export const api = {
     const qs = ids && ids.length ? `?ids=${ids.join(",")}` : "";
     return request<{ ok: boolean; url?: string; filename?: string; count?: number; error?: string }>(`${URLS.docsPdf}${qs}`);
   },
-
-  // ─── Migrate docs to Yandex S3 ──────────────────────────
-  migrateDocsToS3: (): Promise<{ ok: boolean; total: number; migrated: number; errors_count: number; errors: { id: number; name: string; error: string }[] }> =>
-    request<{ ok: boolean; total: number; migrated: number; errors_count: number; errors: { id: number; name: string; error: string }[] }>(URLS.migrateDocsToS3, { method: "POST" }),
 
   // ─── Fix S3 ACL (public-read for all docs) ──────────────
   fixS3Acl: (): Promise<{ ok: boolean; fixed: number; errors_count: number; errors: { id: number; key: string; error: string }[] }> =>
