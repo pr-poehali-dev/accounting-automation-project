@@ -11,6 +11,7 @@ const loadCustomCategories = (): string[] => {
 const saveCustomCategory = (name: string) => {
   const existing = loadCustomCategories();
   if (!existing.includes(name)) localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify([...existing, name]));
+  api.categories.add(name).catch(() => {});
 };
 const STATUSES = ["Выполнено", "В обработке", "Отменено"];
 
@@ -63,6 +64,17 @@ export default function Transactions() {
   }, [search, cat, dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    api.categories.list().then((res) => {
+      const dbNames = res.categories.map((c) => c.name);
+      const local = loadCustomCategories();
+      const merged = [...new Set([...dbNames, ...local])];
+      const custom = merged.filter((n) => !DEFAULT_CATEGORIES.includes(n));
+      localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(custom));
+      setCustomCategories(custom);
+    }).catch(() => {});
+  }, []);
 
   const openCreate = () => {
     setEditTx(null);

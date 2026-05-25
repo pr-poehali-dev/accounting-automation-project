@@ -218,6 +218,13 @@ export const api = {
   fixS3Acl: (): Promise<{ ok: boolean; fixed: number; errors_count: number; errors: { id: number; key: string; error: string }[] }> =>
     request<{ ok: boolean; fixed: number; errors_count: number; errors: { id: number; key: string; error: string }[] }>("https://functions.poehali.dev/9103f50f-35bf-436a-805f-a852b1f78e57", { method: "POST" }),
 
+  // ─── Categories (статьи затрат) ─────────────────────────
+  categories: {
+    list: () => request<{ categories: { name: string; is_default: boolean }[] }>("https://functions.poehali.dev/c2ced8af-0c23-4b87-8705-185ef89e243e"),
+    add: (name: string) => request<{ ok: boolean; name: string }>("https://functions.poehali.dev/c2ced8af-0c23-4b87-8705-185ef89e243e", { method: "POST", body: JSON.stringify({ name }) }),
+    remove: (name: string) => request<{ ok: boolean }>(`https://functions.poehali.dev/c2ced8af-0c23-4b87-8705-185ef89e243e?name=${encodeURIComponent(name)}`, { method: "DELETE" }),
+  },
+
   // ─── Upload document to S3 ──────────────────────────────
   uploadDoc: async (params: { file_b64: string; file_name: string; mime_type: string; doc_id?: number }): Promise<{ ok: boolean; url: string; key: string; duplicate?: boolean; existing_name?: string; existing_date?: string; existing_id?: number }> => {
     const res = await fetch(URLS.uploadDoc, {

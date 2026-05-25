@@ -10,6 +10,7 @@ const loadCustomCategories = (): string[] => {
 const saveCustomCategory = (name: string) => {
   const existing = loadCustomCategories();
   if (!existing.includes(name)) localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify([...existing, name]));
+  api.categories.add(name).catch(() => {});
 };
 
 function isImage(name: string) {
@@ -238,7 +239,18 @@ export default function Documents() {
     }
   };
 
-  useEffect(() => { loadDocs(); }, []);
+  useEffect(() => {
+    loadDocs();
+    // Загружаем категории из БД и мержим с localStorage
+    api.categories.list().then((res) => {
+      const dbNames = res.categories.map((c) => c.name);
+      const local = loadCustomCategories();
+      const merged = [...new Set([...dbNames, ...local])];
+      const custom = merged.filter((n) => !DEFAULT_CATEGORIES.includes(n));
+      localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(custom));
+      setCustomCategories(custom);
+    }).catch(() => {});
+  }, []);
 
   const recognizeFile = async (docId: number, file: File, previewUrl?: string, alreadyUploadedUrl?: string) => {
     setDocs((prev) => prev.map((d) => d.id === docId ? { ...d, recognizing: true, previewUrl } : d));
