@@ -63,6 +63,11 @@ export default function Documents() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
 
+  // Очередь файлов для пакетной загрузки (iOS-совместимость)
+  const [fileQueue, setFileQueue] = useState<File[]>([]);
+  const [showQueue, setShowQueue] = useState(false);
+  const queueInputRef = useRef<HTMLInputElement>(null);
+
   const [mergeDialog, setMergeDialog] = useState<{ images: File[]; nonImages: File[] } | null>(null);
 
   const [customCategories, setCustomCategories] = useState<string[]>(loadCustomCategories);
@@ -463,16 +468,66 @@ export default function Documents() {
           <span className="text-sm font-medium">Сфотографировать</span>
           <span className="text-xs text-muted-foreground text-center">1 или несколько страниц</span>
         </button>
-        <button onClick={() => inputRef.current?.click()}
+        <button onClick={() => queueInputRef.current?.click()}
           className="flex flex-col items-center justify-center gap-2 p-4 card-fin border-2 border-dashed border-border/60 rounded-xl text-muted-foreground active:scale-95 transition-transform">
           <Icon name="Upload" size={26} />
           <span className="text-sm font-medium">Загрузить файл</span>
           <span className="text-xs text-center">PDF, JPG, PNG, XLS</span>
           <span className="text-[10px] text-muted-foreground/60 text-center">можно несколько сразу</span>
-          <input ref={inputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" className="hidden"
-            onChange={(e) => e.target.files && addFiles(Array.from(e.target.files))} />
         </button>
+        {/* Скрытый input для очереди — без multiple для iOS совместимости */}
+        <input ref={queueInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" className="hidden"
+          onChange={(e) => {
+            if (!e.target.files?.[0]) return;
+            const newFiles = Array.from(e.target.files);
+            setFileQueue((prev) => {
+              const updated = [...prev, ...newFiles];
+              setShowQueue(true);
+              return updated;
+            });
+            e.target.value = "";
+          }} />
+        <input ref={inputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" className="hidden"
+          onChange={(e) => e.target.files && addFiles(Array.from(e.target.files))} />
       </div>
+
+      {/* Панель очереди файлов */}
+      {showQueue && fileQueue.length > 0 && (
+        <div className="lg:hidden card-fin p-3 border border-gold/30 animate-fade-in">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">Файлы в очереди: {fileQueue.length}</span>
+            <button onClick={() => { setFileQueue([]); setShowQueue(false); }}
+              className="text-muted-foreground hover:text-foreground">
+              <Icon name="X" size={16} />
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1 mb-3">
+            {fileQueue.map((f, i) => (
+              <span key={i} className="flex items-center gap-1 text-xs bg-secondary px-2 py-1 rounded-full">
+                {f.name.length > 15 ? f.name.slice(0, 12) + "…" : f.name}
+                <button onClick={() => setFileQueue((prev) => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-negative">
+                  <Icon name="X" size={10} />
+                </button>
+              </span>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => queueInputRef.current?.click()}
+              className="flex-1 py-2 border border-border rounded-lg text-xs text-muted-foreground hover:border-gold/40 hover:text-foreground flex items-center justify-center gap-1.5 transition-colors">
+              <Icon name="Plus" size={13} /> Добавить ещё
+            </button>
+            <button
+              onClick={async () => {
+                const files = [...fileQueue];
+                setFileQueue([]); setShowQueue(false);
+                await addFiles(files);
+              }}
+              className="flex-1 py-2 bg-gold text-primary-foreground rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 active:scale-95 transition-transform">
+              <Icon name="Zap" size={13} /> Обработать {fileQueue.length} файл{fileQueue.length === 1 ? "" : fileQueue.length < 5 ? "а" : "ов"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Hidden camera input */}
       <input ref={multiCameraRef} type="file" accept="image/*" capture="environment" className="hidden"
