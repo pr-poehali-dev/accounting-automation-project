@@ -15,17 +15,18 @@ interface Props {
   onDragLeave: () => void;
   onDrop: (e: React.DragEvent) => void;
   onFilesChange: (files: File[]) => void;
+  onAddManual: () => void;
 }
 
 export default function DocList({
   docs, loading, selected, dragging,
   inputRef, onSelect, onDelete,
-  onDragOver, onDragLeave, onDrop, onFilesChange,
+  onDragOver, onDragLeave, onDrop, onFilesChange, onAddManual,
 }: Props) {
   return (
     <div className="lg:col-span-2 card-fin flex flex-col">
       {/* Desktop drag zone */}
-      <div className="p-4 border-b border-border hidden lg:block">
+      <div className="p-4 border-b border-border hidden lg:block space-y-2">
         <div
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
@@ -45,6 +46,13 @@ export default function DocList({
             onChange={(e) => e.target.files && onFilesChange(Array.from(e.target.files))}
           />
         </div>
+        <button
+          onClick={onAddManual}
+          className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border border-dashed border-border text-muted-foreground text-xs hover:border-gold/40 hover:text-gold transition-colors"
+        >
+          <Icon name="FilePlus" size={14} />
+          Добавить без фото
+        </button>
       </div>
 
       {/* List */}

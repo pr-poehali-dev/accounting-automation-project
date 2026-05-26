@@ -1,3 +1,4 @@
+import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { proxyImg } from "@/lib/api";
 import type { DocWithRecognition, PageItem } from "./docTypes";
@@ -276,6 +277,148 @@ export function MultiModal({
         <p className="text-center text-xs text-muted-foreground">
           {pages.length > 0 ? `${pages.length} стр. добавлено • ИИ обработает все сразу` : "Камера откроется автоматически"}
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Manual document modal ────────────────────────────────────
+export interface ManualDocForm {
+  name: string;
+  amount: string;
+  date: string;
+  category: string;
+  description: string;
+  is_cashless: boolean;
+}
+
+interface ManualDocModalProps {
+  show: boolean;
+  saving: boolean;
+  customCategories: string[];
+  onClose: () => void;
+  onSave: (form: ManualDocForm) => void;
+}
+
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+export function ManualDocModal({ show, saving, customCategories, onClose, onSave }: ManualDocModalProps) {
+  const [form, setForm] = useState<ManualDocForm>({
+    name: "", amount: "", date: todayStr(), category: "Прочее", description: "", is_cashless: false,
+  });
+
+  if (!show) return null;
+
+  const allCats = [...DEFAULT_CATEGORIES, ...customCategories.filter((c) => !DEFAULT_CATEGORIES.includes(c))];
+
+  const handleSave = () => {
+    if (!form.amount || !form.date) return;
+    onSave(form);
+    setForm({ name: "", amount: "", date: todayStr(), category: "Прочее", description: "", is_cashless: false });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-4">
+      <div className="bg-card border border-border rounded-2xl w-full max-w-sm animate-fade-in overflow-y-auto max-h-[90vh]">
+        <div className="p-5 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-gold/10 flex items-center justify-center">
+              <Icon name="FilePlus" size={20} className="text-gold" />
+            </div>
+            <div>
+              <div className="font-semibold text-base">Добавить без фото</div>
+              <div className="text-xs text-muted-foreground">Ручной ввод расхода</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1">
+            <Icon name="X" size={18} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Название документа</label>
+            <input
+              value={form.name}
+              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+              placeholder="Чек, накладная, счёт..."
+              className="w-full bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Сумма ₽ <span className="text-negative">*</span></label>
+              <input
+                type="number"
+                value={form.amount}
+                onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))}
+                placeholder="0.00"
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Дата <span className="text-negative">*</span></label>
+              <input
+                type="date"
+                value={form.date}
+                onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))}
+                className="w-full bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Статья затрат</label>
+            <select
+              value={form.category}
+              onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}
+              className="w-full bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold"
+            >
+              {allCats.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">Описание</label>
+            <input
+              value={form.description}
+              onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+              placeholder="Необязательно..."
+              className="w-full bg-secondary border border-border rounded-lg px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setForm((p) => ({ ...p, is_cashless: !p.is_cashless }))}
+            className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
+              form.is_cashless ? "border-blue-500/50 bg-blue-500/10" : "border-border hover:border-blue-500/30"
+            }`}
+          >
+            <div className={`w-5 h-5 rounded flex items-center justify-center border-2 flex-shrink-0 transition-colors ${
+              form.is_cashless ? "bg-blue-500 border-blue-500" : "border-muted-foreground"
+            }`}>
+              {form.is_cashless && <Icon name="Check" size={12} className="text-white" />}
+            </div>
+            <span className={`text-sm font-medium ${form.is_cashless ? "text-blue-400" : "text-foreground"}`}>
+              Безналичный расчёт
+            </span>
+          </button>
+        </div>
+
+        <div className="px-5 pb-5 space-y-2">
+          <button
+            onClick={handleSave}
+            disabled={saving || !form.amount || !form.date}
+            className="w-full py-3 bg-gold text-primary-foreground rounded-xl font-semibold text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving
+              ? <><div className="w-4 h-4 rounded-full border-2 border-primary-foreground/50 border-t-primary-foreground animate-spin" /> Сохраняю...</>
+              : <><Icon name="Plus" size={16} /> Добавить запись</>}
+          </button>
+          <button onClick={onClose} className="w-full py-2 text-sm text-muted-foreground">Отмена</button>
+        </div>
       </div>
     </div>
   );

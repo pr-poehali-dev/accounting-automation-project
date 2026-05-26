@@ -40,6 +40,7 @@ export interface Transaction {
   amount: number;
   status: string;
   is_taxable?: boolean;
+  is_cashless?: boolean;
   document_id?: number | null;
   created_at?: string;
 }

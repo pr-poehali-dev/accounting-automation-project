@@ -137,11 +137,12 @@ def handler(event: dict, context) -> dict:
         if method == "POST":
             body = json.loads(event.get("body") or "{}")
             is_taxable = body.get("is_taxable", True)
+            is_cashless = body.get("is_cashless", False)
             document_id = body.get("document_id")
             cur.execute(f"""
-                INSERT INTO {SCHEMA}.transactions (date, description, category, amount, status, is_taxable, document_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                RETURNING id, date, description, category, amount, status, is_taxable, document_id, created_at
+                INSERT INTO {SCHEMA}.transactions (date, description, category, amount, status, is_taxable, is_cashless, document_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, date, description, category, amount, status, is_taxable, is_cashless, document_id, created_at
             """, (
                 body.get("date", str(date.today())),
                 body["description"],
@@ -149,10 +150,11 @@ def handler(event: dict, context) -> dict:
                 float(body["amount"]),
                 body.get("status", "Выполнено"),
                 is_taxable,
+                is_cashless,
                 document_id,
             ))
             conn.commit()
-            cols = ["id","date","description","category","amount","status","is_taxable","document_id","created_at"]
+            cols = ["id","date","description","category","amount","status","is_taxable","is_cashless","document_id","created_at"]
             row = dict(zip(cols, cur.fetchone()))
             row["amount"] = float(row["amount"])
             return resp(201, {"transaction": row})
@@ -165,7 +167,7 @@ def handler(event: dict, context) -> dict:
             body = json.loads(event.get("body") or "{}")
             fields = []
             params = []
-            for f in ["date", "description", "category", "amount", "status", "is_taxable", "document_id"]:
+            for f in ["date", "description", "category", "amount", "status", "is_taxable", "is_cashless", "document_id"]:
                 if f in body:
                     fields.append(f"{f} = %s")
                     params.append(body[f])

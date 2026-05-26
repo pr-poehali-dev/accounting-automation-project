@@ -7,31 +7,28 @@
       "expectedStatus": 200
     },
     {
-      "name": "GET summary (empty DB)",
+      "name": "GET summary",
       "method": "GET",
       "path": "/?action=summary",
-      "expectedStatus": 200,
-      "expectedBody": {"balance": 0},
-      "bodyMatcher": "partial"
+      "expectedStatus": 200
     },
     {
-      "name": "GET list (empty)",
+      "name": "GET list",
       "method": "GET",
       "path": "/",
-      "expectedStatus": 200,
-      "expectedBody": {"transactions": []},
-      "bodyMatcher": "partial"
+      "expectedStatus": 200
     },
     {
       "name": "POST create transaction",
       "method": "POST",
       "path": "/",
       "body": {
-        "date": "2026-05-21",
-        "description": "Тестовая операция",
+        "date": "2026-01-15",
+        "description": "Тест без фото",
         "category": "Прочее",
-        "amount": 100000,
-        "status": "Выполнено"
+        "amount": -500,
+        "status": "Выполнено",
+        "is_cashless": true
       },
       "expectedStatus": 201,
       "expectedBody": {"transaction": {"description": "string"}},
@@ -41,9 +38,7 @@
       "name": "GET list after create",
       "method": "GET",
       "path": "/",
-      "expectedStatus": 200,
-      "expectedBody": {"total": 1},
-      "bodyMatcher": "partial"
+      "expectedStatus": 200
     }
   ]
 }

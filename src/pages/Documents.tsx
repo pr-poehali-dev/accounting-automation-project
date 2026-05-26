@@ -10,7 +10,8 @@ import {
 import type { DocWithRecognition, PageItem } from "@/components/documents/docTypes";
 import DocList from "@/components/documents/DocList";
 import DocDetail from "@/components/documents/DocDetail";
-import { MergeDialog, DeleteDialog, TxModal, MultiModal } from "@/components/documents/DocModals";
+import { MergeDialog, DeleteDialog, TxModal, MultiModal, ManualDocModal } from "@/components/documents/DocModals";
+import type { ManualDocForm } from "@/components/documents/DocModals";
 
 // ── localStorage preview helpers ─────────────────────────────
 const savePreviewSmall = async (docId: number, dataUrl: string) => {
@@ -80,6 +81,9 @@ export default function Documents() {
   const [savingCategory, setSavingCategory] = useState(false);
   const [newCatInline, setNewCatInline] = useState("");
   const [addingCatInline, setAddingCatInline] = useState(false);
+
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [manualSaving, setManualSaving] = useState(false);
 
   // ── Load ─────────────────────────────────────────────────
   const loadDocs = async () => {
@@ -366,6 +370,41 @@ export default function Documents() {
     setSelected((prev) => prev?.id === id ? { ...prev, is_cashless: value } : prev);
   };
 
+  const handleManualDoc = async (form: ManualDocForm) => {
+    setManualSaving(true);
+    try {
+      const docName = form.name.trim() || `Расход ${form.date}`;
+      const docRes = await api.documents.create({
+        name: docName,
+        status: "done",
+        rec_amount: `₽ ${form.amount}`,
+        rec_date: form.date,
+        rec_type: "Ручная запись",
+        is_cashless: form.is_cashless,
+      });
+      await api.transactions.create({
+        date: form.date,
+        description: form.description || docName,
+        category: form.category,
+        amount: -Math.abs(Number(form.amount)),
+        status: "Выполнено",
+        document_id: docRes.document.id,
+        is_cashless: form.is_cashless,
+      } as Parameters<typeof api.transactions.create>[0]);
+      const newDoc: DocWithRecognition = {
+        ...docRes.document,
+        rec_category: form.category,
+        is_cashless: form.is_cashless,
+      };
+      setDocs((prev) => [newDoc, ...prev]);
+      setSelected(newDoc);
+      setMobileView("detail");
+      setShowManualModal(false);
+    } finally {
+      setManualSaving(false);
+    }
+  };
+
   const handleCategoryChange = async (newCategory: string) => {
     const txId = selected?.transaction_id || selected?.recognition?.transaction_id;
     if (!txId) return;
@@ -471,19 +510,21 @@ export default function Documents() {
       )}
 
       {/* Mobile buttons */}
-      <div className="grid grid-cols-2 gap-3 lg:hidden">
+      <div className="grid grid-cols-3 gap-2 lg:hidden">
         <button onClick={() => { setPages([]); setShowMultiModal(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-          className="flex flex-col items-center justify-center gap-2 p-4 card-fin border-2 border-dashed border-gold/40 rounded-xl text-gold active:scale-95 transition-transform">
-          <Icon name="Camera" size={26} />
-          <span className="text-sm font-medium">Сфотографировать</span>
-          <span className="text-xs text-muted-foreground text-center">1 или несколько страниц</span>
+          className="flex flex-col items-center justify-center gap-2 p-3 card-fin border-2 border-dashed border-gold/40 rounded-xl text-gold active:scale-95 transition-transform">
+          <Icon name="Camera" size={22} />
+          <span className="text-xs font-medium text-center">Сфотографировать</span>
         </button>
         <button onClick={() => queueInputRef.current?.click()}
-          className="flex flex-col items-center justify-center gap-2 p-4 card-fin border-2 border-dashed border-border/60 rounded-xl text-muted-foreground active:scale-95 transition-transform">
-          <Icon name="Upload" size={26} />
-          <span className="text-sm font-medium">Загрузить файл</span>
-          <span className="text-xs text-center">PDF, JPG, PNG, XLS</span>
-          <span className="text-[10px] text-muted-foreground/60 text-center">можно несколько сразу</span>
+          className="flex flex-col items-center justify-center gap-2 p-3 card-fin border-2 border-dashed border-border/60 rounded-xl text-muted-foreground active:scale-95 transition-transform">
+          <Icon name="Upload" size={22} />
+          <span className="text-xs font-medium text-center">Загрузить файл</span>
+        </button>
+        <button onClick={() => setShowManualModal(true)}
+          className="flex flex-col items-center justify-center gap-2 p-3 card-fin border-2 border-dashed border-border/60 rounded-xl text-muted-foreground active:scale-95 transition-transform">
+          <Icon name="FilePlus" size={22} />
+          <span className="text-xs font-medium text-center">Без фото</span>
         </button>
         {/* Скрытый input для очереди — без multiple для iOS совместимости */}
         <input ref={queueInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx" className="hidden"
@@ -570,6 +611,7 @@ export default function Documents() {
             onDragLeave={() => setDragging(false)}
             onDrop={(e) => { e.preventDefault(); setDragging(false); addFiles(Array.from(e.dataTransfer.files)); }}
             onFilesChange={addFiles}
+            onAddManual={() => setShowManualModal(true)}
           />
         </div>
 
@@ -642,6 +684,14 @@ export default function Documents() {
         onClose={() => { setShowMultiModal(false); setPages([]); }}
         onRemovePage={removePage}
         onDone={handleMultiDone}
+      />
+
+      <ManualDocModal
+        show={showManualModal}
+        saving={manualSaving}
+        customCategories={customCategories}
+        onClose={() => setShowManualModal(false)}
+        onSave={handleManualDoc}
       />
     </div>
   );
