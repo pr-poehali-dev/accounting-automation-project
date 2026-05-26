@@ -27,6 +27,7 @@ interface Props {
   onSetNewCatInline: (v: string) => void;
   onSaveCustomCategory: (name: string) => void;
   onSetCustomCategories: (cats: string[]) => void;
+  onCashlessToggle: (id: number, value: boolean) => void;
 }
 
 function EditableField({ label, value, icon, onSave }: { label: string; value: string; icon: string; onSave: (v: string) => void }) {
@@ -63,7 +64,7 @@ export default function DocDetail({
   onRecognizeAgain, onShare, onDownload, onReupload,
   onDelete, onOpenCreateTx, onFieldUpdate, onCategoryChange,
   onSetEditingCategory, onSetAddingCatInline, onSetNewCatInline,
-  onSaveCustomCategory, onSetCustomCategories,
+  onSaveCustomCategory, onSetCustomCategories, onCashlessToggle,
 }: Props) {
   const loadCustomCats = () => {
     try { return JSON.parse(localStorage.getItem("custom_categories_v1") || "[]"); } catch { return []; }
@@ -163,6 +164,38 @@ export default function DocDetail({
                 onChange={(e) => { if (e.target.files?.[0]) { onReupload(e.target.files[0]); (e.target as HTMLInputElement).value = ""; } }} />
               <div className="mt-1 px-0.5">
                 <span className="text-[11px] text-muted-foreground">🔴 фото не загружено в хранилище</span>
+              </div>
+            </div>
+          )}
+
+          {/* Галочка безнал — для уже существующих документов без recognition */}
+          {!selected.recognizing && selected.status === "done" && !selDone && (
+            <div className="mb-3">
+              <button
+                onClick={() => onCashlessToggle(selected.id, !selected.is_cashless)}
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all active:scale-95 ${
+                  selected.is_cashless
+                    ? "border-blue-500/50 bg-blue-500/10"
+                    : "border-border bg-transparent hover:border-blue-500/30 hover:bg-blue-500/5"
+                }`}
+              >
+                <div className={`w-5 h-5 rounded flex items-center justify-center border-2 flex-shrink-0 transition-colors ${
+                  selected.is_cashless ? "bg-blue-500 border-blue-500" : "border-muted-foreground"
+                }`}>
+                  {selected.is_cashless && <Icon name="Check" size={12} className="text-white" />}
+                </div>
+                <div className="text-left">
+                  <div className={`text-sm font-medium ${selected.is_cashless ? "text-blue-400" : "text-foreground"}`}>
+                    Безналичный расчёт
+                  </div>
+                  <div className="text-xs text-muted-foreground">Учитывается в отчёте по безналу</div>
+                </div>
+              </button>
+              <div className="flex gap-2 pt-3">
+                <button onClick={() => onDelete(selected.id)}
+                  className="px-4 py-2.5 border border-red-900/40 text-negative rounded text-sm hover:bg-red-900/20 transition-colors">
+                  <Icon name="Trash2" size={15} />
+                </button>
               </div>
             </div>
           )}
@@ -324,6 +357,28 @@ export default function DocDetail({
                   )}
                 </div>
               )}
+
+              {/* Безналичный расчёт */}
+              <button
+                onClick={() => onCashlessToggle(selected.id, !selected.is_cashless)}
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all active:scale-95 ${
+                  selected.is_cashless
+                    ? "border-blue-500/50 bg-blue-500/10"
+                    : "border-border bg-transparent hover:border-blue-500/30 hover:bg-blue-500/5"
+                }`}
+              >
+                <div className={`w-5 h-5 rounded flex items-center justify-center border-2 flex-shrink-0 transition-colors ${
+                  selected.is_cashless ? "bg-blue-500 border-blue-500" : "border-muted-foreground"
+                }`}>
+                  {selected.is_cashless && <Icon name="Check" size={12} className="text-white" />}
+                </div>
+                <div className="text-left">
+                  <div className={`text-sm font-medium ${selected.is_cashless ? "text-blue-400" : "text-foreground"}`}>
+                    Безналичный расчёт
+                  </div>
+                  <div className="text-xs text-muted-foreground">Учитывается в отчёте по безналу</div>
+                </div>
+              </button>
 
               {selected.recognition?.description && (
                 <div className="card-fin-raised p-3 rounded-lg">

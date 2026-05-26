@@ -360,6 +360,12 @@ export default function Documents() {
     setSelected((prev) => prev ? { ...prev, ...updated.document } : prev);
   };
 
+  const handleCashlessToggle = async (id: number, value: boolean) => {
+    await api.documents.update(id, { is_cashless: value });
+    setDocs((prev) => prev.map((d) => d.id === id ? { ...d, is_cashless: value } : d));
+    setSelected((prev) => prev?.id === id ? { ...prev, is_cashless: value } : prev);
+  };
+
   const handleCategoryChange = async (newCategory: string) => {
     const txId = selected?.transaction_id || selected?.recognition?.transaction_id;
     if (!txId) return;
@@ -591,6 +597,7 @@ export default function Documents() {
           onSetNewCatInline={setNewCatInline}
           onSaveCustomCategory={saveCustomCategory}
           onSetCustomCategories={setCustomCategories}
+          onCashlessToggle={handleCashlessToggle}
         />
       </div>
 

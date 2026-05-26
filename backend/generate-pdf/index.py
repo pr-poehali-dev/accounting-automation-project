@@ -223,7 +223,7 @@ def make_paragraph(text, font, size=9, bold=False, color=None, align=0):
     return Paragraph(txt, style)
 
 
-def generate_report_pdf(transactions, date_from, date_to, income_total, expense_total, vat_rate) -> bytes:
+def generate_report_pdf(transactions, date_from, date_to, income_total, expense_total, vat_rate, expense_cashless=0) -> bytes:
     """PDF финансового отчёта (без фото)."""
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
@@ -338,14 +338,24 @@ def generate_report_pdf(transactions, date_from, date_to, income_total, expense_
             P(fmt_rub(total_exp), size=9, bold=True, align=2),
             P("100%", size=9, bold=True, align=2),
         ])
+        has_cashless_row = expense_cashless > 0
+        if has_cashless_row:
+            pct_cashless = f"{expense_cashless / total_exp * 100:.1f}%" if total_exp > 0 else "—"
+            cat_data.append([
+                P("  В т.ч. по безналичному расчёту", size=9, bold=False, color=colors.HexColor("#1a56db")),
+                P(fmt_rub(expense_cashless), size=9, bold=False, align=2, color=colors.HexColor("#1a56db")),
+                P(pct_cashless, size=9, bold=False, align=2, color=colors.HexColor("#1a56db")),
+            ])
+
+        totals_rows = 2 if has_cashless_row else 1
 
         cat_table = Table(cat_data, colWidths=cat_col_widths, repeatRows=1)
         cat_table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f8f8f8")]),
-            ("GRID", (0, 0), (-1, -2), 0.4, colors.HexColor("#cccccc")),
-            ("LINEABOVE", (0, -1), (-1, -1), 1.5, colors.black),
-            ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f0f0e0")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -(totals_rows + 1)), [colors.white, colors.HexColor("#f8f8f8")]),
+            ("GRID", (0, 0), (-1, -(totals_rows + 1)), 0.4, colors.HexColor("#cccccc")),
+            ("LINEABOVE", (0, -(totals_rows)), (-1, -(totals_rows)), 1.5, colors.black),
+            ("BACKGROUND", (0, -(totals_rows)), (-1, -(totals_rows)), colors.HexColor("#f0f0e0")),
             ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
             ("TOPPADDING", (0, 0), (-1, -1), 5),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
@@ -446,14 +456,14 @@ def fetch_transactions(date_from, date_to, taxable_only):
 
         cur.execute(f"""
             SELECT t.id, t.date, t.description, t.category, t.amount, t.status, t.document_id,
-                   d.s3_url
+                   d.s3_url, t.is_cashless
             FROM {SCHEMA}.transactions t
             LEFT JOIN {SCHEMA}.documents d ON d.id = t.document_id
             WHERE {where}
             ORDER BY t.date ASC, t.id ASC
         """, params)
 
-        cols = ["id", "date", "description", "category", "amount", "status", "document_id", "s3_url"]
+        cols = ["id", "date", "description", "category", "amount", "status", "document_id", "s3_url", "is_cashless"]
         txs = [dict(zip(cols, r)) for r in cur.fetchall()]
         return txs
     finally:
@@ -480,6 +490,7 @@ def handler(event: dict, context) -> dict:
 
         income_total = sum(float(t["amount"]) for t in txs if float(t["amount"]) > 0)
         expense_total = sum(abs(float(t["amount"])) for t in txs if float(t["amount"]) < 0)
+        expense_cashless = sum(abs(float(t["amount"])) for t in txs if float(t["amount"]) < 0 and t.get("is_cashless"))
 
         period = f"{(date_from or 'all')}_{date_to}"
 
@@ -487,7 +498,7 @@ def handler(event: dict, context) -> dict:
             pdf_bytes = generate_docs_pdf(txs, date_from or "2000-01-01", date_to)
             filename = f"Dokumenty_IP_{period}.pdf"
         else:
-            pdf_bytes = generate_report_pdf(txs, date_from or "2000-01-01", date_to, income_total, expense_total, vat_rate)
+            pdf_bytes = generate_report_pdf(txs, date_from or "2000-01-01", date_to, income_total, expense_total, vat_rate, expense_cashless)
             filename = f"Otchet_IP_{period}.pdf"
 
         # Сохраняем PDF в Яндекс S3 (или CDN если Яндекс не настроен)

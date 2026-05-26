@@ -222,7 +222,7 @@ function getQuarterDates(year: number, q: 1 | 2 | 3 | 4) {
   return { date_from: `${year}-${from}`, date_to: `${year}-${to}` };
 }
 
-interface QuarterData { income: number; expense: number; loading: boolean; }
+interface QuarterData { income: number; expense: number; expense_cashless: number; loading: boolean; }
 type QuartersState = [QuarterData, QuarterData, QuarterData, QuarterData];
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -270,7 +270,7 @@ export default function Dashboard({ onNavigate }: Props) {
     const saved = localStorage.getItem(YEAR_KEY);
     return saved ? parseInt(saved, 10) : CURRENT_YEAR;
   });
-  const emptyQ = (): QuarterData => ({ income: 0, expense: 0, loading: true });
+  const emptyQ = (): QuarterData => ({ income: 0, expense: 0, expense_cashless: 0, loading: true });
   const [quarters, setQuarters] = useState<QuartersState>([emptyQ(), emptyQ(), emptyQ(), emptyQ()]);
 
   const loadQuarters = useCallback(async (year: number) => {
@@ -278,7 +278,7 @@ export default function Dashboard({ onNavigate }: Props) {
     const results = await Promise.all(
       ([1, 2, 3, 4] as const).map((q) => api.taxReports.summary(getQuarterDates(year, q)))
     );
-    setQuarters(results.map((r) => ({ income: r.income, expense: r.expense, loading: false })) as QuartersState);
+    setQuarters(results.map((r) => ({ income: r.income, expense: r.expense, expense_cashless: r.expense_cashless ?? 0, loading: false })) as QuartersState);
   }, []);
 
   useEffect(() => {
@@ -467,6 +467,12 @@ export default function Dashboard({ onNavigate }: Props) {
                     <span className="flex items-center gap-1 text-muted-foreground"><span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />Расход</span>
                     <span className="font-mono-fin">{q.loading ? <span className="inline-block w-12 h-3 bg-secondary rounded animate-pulse" /> : fmt(q.expense)}</span>
                   </div>
+                  {(q.loading || q.expense_cashless > 0) && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1 text-muted-foreground"><span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />Безнал</span>
+                      <span className="font-mono-fin text-blue-400">{q.loading ? <span className="inline-block w-12 h-3 bg-secondary rounded animate-pulse" /> : fmt(q.expense_cashless)}</span>
+                    </div>
+                  )}
                 </div>
                 {!q.loading && (q.income > 0 || q.expense > 0) && (
                   <div className="h-1 rounded-full bg-secondary overflow-hidden">
@@ -479,6 +485,34 @@ export default function Dashboard({ onNavigate }: Props) {
           })}
         </div>
       </div>
+
+      {/* ── Безналичный расчёт за год ── */}
+      {quarters.some((q) => !q.loading && q.expense_cashless > 0) && (
+        <div className="card-fin p-3 sm:p-5 border border-blue-500/20">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 rounded flex items-center justify-center bg-blue-500/10 flex-shrink-0">
+              <Icon name="CreditCard" size={15} className="text-blue-400" />
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Безналичный расчёт</div>
+              <div className="text-sm font-medium">Расходы по безналу — {quarterYear}</div>
+            </div>
+            <div className="ml-auto font-mono-fin text-lg font-semibold text-blue-400">
+              {fmt(quarters.reduce((s, q) => s + q.expense_cashless, 0))}
+            </div>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {(["I кв.", "II кв.", "III кв.", "IV кв."] as const).map((label, i) => (
+              <div key={i} className="text-center p-2 rounded-lg bg-blue-500/5 border border-blue-500/10">
+                <div className="text-[10px] text-muted-foreground mb-1">{label}</div>
+                <div className="font-mono-fin text-xs font-medium text-blue-400">
+                  {quarters[i].loading ? "…" : fmt(quarters[i].expense_cashless)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card-fin p-3 sm:p-5">
         <div className="text-[10px] sm:text-xs uppercase tracking-wider sm:tracking-widest text-muted-foreground mb-3 sm:mb-4">Быстрые действия</div>

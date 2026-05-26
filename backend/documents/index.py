@@ -42,7 +42,8 @@ def handler(event: dict, context) -> dict:
                 SELECT d.id, d.name, d.size_label, d.file_key, d.status,
                        d.rec_type, d.rec_amount, d.rec_date, d.rec_counterparty, d.rec_inn,
                        d.created_at, d.s3_url,
-                       t.id AS transaction_id, t.category AS rec_category
+                       t.id AS transaction_id, t.category AS rec_category,
+                       d.is_cashless
                 FROM {SCHEMA}.documents d
                 LEFT JOIN {SCHEMA}.transactions t
                     ON t.document_id = d.id AND t.status != 'Отменено'
@@ -50,7 +51,7 @@ def handler(event: dict, context) -> dict:
             """)
             cols = ["id","name","size_label","file_key","status",
                     "rec_type","rec_amount","rec_date","rec_counterparty","rec_inn",
-                    "created_at","s3_url","transaction_id","rec_category"]
+                    "created_at","s3_url","transaction_id","rec_category","is_cashless"]
             rows = [dict(zip(cols, r)) for r in cur.fetchall()]
             return resp(200, {"documents": rows})
 
@@ -58,9 +59,9 @@ def handler(event: dict, context) -> dict:
             body = json.loads(event.get("body") or "{}")
             cur.execute(f"""
                 INSERT INTO {SCHEMA}.documents
-                    (name, size_label, file_key, status, rec_type, rec_amount, rec_date, rec_counterparty, rec_inn, s3_url)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING id, name, size_label, status, s3_url, created_at
+                    (name, size_label, file_key, status, rec_type, rec_amount, rec_date, rec_counterparty, rec_inn, s3_url, is_cashless)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, name, size_label, status, s3_url, created_at, is_cashless
             """, (
                 body.get("name", "document"),
                 body.get("size_label"),
@@ -72,9 +73,10 @@ def handler(event: dict, context) -> dict:
                 body.get("rec_counterparty"),
                 body.get("rec_inn"),
                 body.get("s3_url"),
+                body.get("is_cashless", False),
             ))
             conn.commit()
-            cols = ["id","name","size_label","status","s3_url","created_at"]
+            cols = ["id","name","size_label","status","s3_url","created_at","is_cashless"]
             row = dict(zip(cols, cur.fetchone()))
             return resp(201, {"document": row})
 
@@ -92,6 +94,7 @@ def handler(event: dict, context) -> dict:
                 "rec_date": "rec_date",
                 "rec_counterparty": "rec_counterparty",
                 "rec_inn": "rec_inn",
+                "is_cashless": "is_cashless",
             }
             for k, col in mapping.items():
                 if k in body:
@@ -102,14 +105,19 @@ def handler(event: dict, context) -> dict:
             params.append(doc_id)
             cur.execute(f"""
                 UPDATE {SCHEMA}.documents SET {', '.join(fields)} WHERE id = %s
-                RETURNING id, name, size_label, status, rec_type, rec_amount, rec_date, rec_counterparty, rec_inn
+                RETURNING id, name, size_label, status, rec_type, rec_amount, rec_date, rec_counterparty, rec_inn, is_cashless
             """, params)
             conn.commit()
             row = cur.fetchone()
             if not row:
                 return resp(404, {"error": "Not found"})
-            cols = ["id","name","size_label","status","rec_type","rec_amount","rec_date","rec_counterparty","rec_inn"]
-            return resp(200, {"document": dict(zip(cols, row))})
+            cols = ["id","name","size_label","status","rec_type","rec_amount","rec_date","rec_counterparty","rec_inn","is_cashless"]
+            doc = dict(zip(cols, row))
+            # Синхронизируем is_cashless в связанной транзакции
+            if "is_cashless" in body:
+                cur.execute(f"UPDATE {SCHEMA}.transactions SET is_cashless = %s WHERE document_id = %s", (body["is_cashless"], doc_id))
+                conn.commit()
+            return resp(200, {"document": doc})
 
         if method == "DELETE":
             doc_id = qs.get("id")

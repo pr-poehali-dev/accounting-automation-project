@@ -55,18 +55,21 @@ def handler(event: dict, context) -> dict:
             cur.execute(f"""
                 SELECT
                     COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS income,
-                    COALESCE(SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END), 0) AS expense
+                    COALESCE(SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END), 0) AS expense,
+                    COALESCE(SUM(CASE WHEN amount < 0 AND is_cashless = TRUE THEN ABS(amount) ELSE 0 END), 0) AS expense_cashless
                 FROM {SCHEMA}.transactions {where}
             """, params)
-            income, expense = cur.fetchone()
+            income, expense, expense_cashless = cur.fetchone()
             income = float(income)
             expense = float(expense)
+            expense_cashless = float(expense_cashless)
             base = income - expense
             vat = round(base * 0.20 if base > 0 else 0, 2)
 
             return resp(200, {
                 "income": income,
                 "expense": expense,
+                "expense_cashless": expense_cashless,
                 "tax_base": base,
                 "vat": vat,
             })

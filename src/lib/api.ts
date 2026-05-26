@@ -118,7 +118,7 @@ export const api = {
       const qs = new URLSearchParams({ action: "summary" });
       if (params?.date_from) qs.set("date_from", params.date_from);
       if (params?.date_to) qs.set("date_to", params.date_to);
-      return request<{ income: number; expense: number; tax_base: number; vat: number }>(
+      return request<{ income: number; expense: number; expense_cashless: number; tax_base: number; vat: number }>(
         `${URLS.taxReports}?${qs.toString()}`
       );
     },
@@ -249,6 +249,7 @@ export interface DocRecord {
   s3_url?: string | null;
   transaction_id?: number | null;
   rec_category?: string | null;
+  is_cashless?: boolean;
 }
 
 export interface TaxReport {
